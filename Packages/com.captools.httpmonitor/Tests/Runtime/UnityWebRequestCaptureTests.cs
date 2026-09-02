@@ -11,8 +11,7 @@ namespace HttpMonitor.Tests
 {
     /// <summary>
     /// End-to-end: this assembly is woven like any user assembly, so plain UnityWebRequest calls
-    /// below must show up in <see cref="HttpMonitorSession.Current"/>. Uses the public internet
-    /// until M1 step 7 brings the local echo server.
+    /// below must show up in <see cref="HttpMonitorSession.Current"/>.
     /// </summary>
     public class UnityWebRequestCaptureTests
     {
@@ -40,6 +39,7 @@ namespace HttpMonitor.Tests
         {
             Assert.NotNull(record, "no record for " + url);
             Assert.AreEqual(HttpClientKind.UnityWebRequest, record.Client);
+            Assert.AreEqual(HttpCaptureSource.Woven, record.Source);
             Assert.AreEqual("GET", record.Method);
             Assert.AreEqual(HttpRecordState.Completed, record.State);
             Assert.AreEqual(200, record.StatusCode);
@@ -59,7 +59,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator Coroutine_WithUsing_RecordsCompletedResponse()
         {
-            const string url = "https://example.com/?from=using";
+            var url = TestServer.Shared.Url("echo?from=using");
 
             using (var request = UnityWebRequest.Get(url))
                 yield return request.SendWebRequest();
@@ -70,7 +70,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator Coroutine_WithExplicitDispose_RecordsCompletedResponse()
         {
-            const string url = "https://example.com/?from=explicit-dispose";
+            var url = TestServer.Shared.Url("echo?from=explicit-dispose");
             var request = UnityWebRequest.Get(url);
             request.SendWebRequest();
 
@@ -85,7 +85,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator Coroutine_NeverDisposed_RecordsViaCompletedEvent()
         {
-            const string url = "https://example.com/?from=leaked";
+            var url = TestServer.Shared.Url("echo?from=leaked");
             var request = UnityWebRequest.Get(url);
             yield return request.SendWebRequest();
             yield return WaitUntilFinished(url);
@@ -96,7 +96,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator Async_WithUsing_RecordsCompletedResponse()
         {
-            const string url = "https://example.com/?from=async";
+            var url = TestServer.Shared.Url("echo?from=async");
             var task = SendAsync(url);
 
             while (!task.IsCompleted)
@@ -109,7 +109,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator DisposedBeforeCompletion_RecordsAborted()
         {
-            const string url = "https://example.com/?from=aborted";
+            var url = TestServer.Shared.Url("delay/2000?from=aborted");
             var request = UnityWebRequest.Get(url);
             request.SendWebRequest();
             request.Dispose();
@@ -125,9 +125,9 @@ namespace HttpMonitor.Tests
         }
 
         [UnityTest]
-        public IEnumerator UnreachableHost_RecordsFailedWithError()
+        public IEnumerator ConnectionRefused_RecordsFailedWithError()
         {
-            const string url = "https://nonexistent.invalid/?from=failed";
+            var url = TestServer.UnreachableUrl + "?from=failed";
 
             using (var request = UnityWebRequest.Get(url))
                 yield return request.SendWebRequest();
@@ -143,7 +143,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator HttpErrorStatus_IsStillCompleted_WithNoTransportError()
         {
-            const string url = "https://httpbin.org/status/404?from=protocol-error";
+            var url = TestServer.Shared.Url("status/404?from=protocol-error");
 
             using (var request = UnityWebRequest.Get(url))
                 yield return request.SendWebRequest();
@@ -159,7 +159,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator Events_FirePendingThenFinal_ForARealRequest()
         {
-            const string url = "https://example.com/?from=events";
+            var url = TestServer.Shared.Url("echo?from=events");
             var seen = new List<string>();
             Action<HttpRecord> added = r => { if (r.Url == url) seen.Add("added:" + r.State); };
             Action<HttpRecord> updated = r => { if (r.Url == url) seen.Add("updated:" + r.State); };
@@ -183,7 +183,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator WhenNotRecording_RequestPassesThrough_AndNothingIsRecorded()
         {
-            const string url = "https://example.com/?from=paused";
+            var url = TestServer.Shared.Url("echo?from=paused");
             HttpMonitorSession.Current.IsRecording = false;
 
             try

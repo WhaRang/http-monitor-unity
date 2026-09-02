@@ -20,10 +20,15 @@ namespace HttpMonitor.Tests
             return record.RequestHeaders.FirstOrDefault(h => h.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).Value;
         }
 
-        [UnityTest]
-        public IEnumerator HeadersSetBeforeSend_AreRecorded_InOrder()
+        private static string EchoedHeader(HttpRecord record, string name)
         {
-            const string url = "https://example.com/?from=headers";
+            return record.ResponseHeaders.FirstOrDefault(h => h.Name.Equals("X-Echo-" + name, StringComparison.OrdinalIgnoreCase)).Value;
+        }
+
+        [UnityTest]
+        public IEnumerator HeadersSetBeforeSend_AreRecorded_InOrder_AndActuallySent()
+        {
+            var url = TestServer.Shared.Url("echo?from=headers");
 
             using (var request = UnityWebRequest.Get(url))
             {
@@ -41,12 +46,15 @@ namespace HttpMonitor.Tests
             Assert.AreEqual("1", HeaderValue(record, "x-first"));
             Assert.AreEqual(HttpMonitorOptions.DefaultRedactedValue, HeaderValue(record, "authorization"), "Authorization must be redacted at record time");
             Assert.AreEqual(HttpCaptureSource.Woven, record.Source);
+
+            Assert.AreEqual("1", EchoedHeader(record, "X-First"), "the woven call must still set the real header");
+            Assert.AreEqual("Bearer secret", EchoedHeader(record, "Authorization"), "redaction is on our copy only, the wire is untouched");
         }
 
         [UnityTest]
         public IEnumerator SettingTheSameHeaderTwice_KeepsOneEntry_WithTheLastValue()
         {
-            const string url = "https://example.com/?from=header-override";
+            var url = TestServer.Shared.Url("echo?from=header-override");
 
             using (var request = UnityWebRequest.Get(url))
             {
@@ -66,7 +74,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator ContentTypeFromUploadHandler_IsRecorded_WhenNotSetExplicitly()
         {
-            const string url = "https://httpbin.org/post?from=implicit-content-type";
+            var url = TestServer.Shared.Url("echo?from=implicit-content-type");
 
             using (var request = UnityWebRequest.Post(url, "{\"a\":1}", "application/json"))
             {
@@ -82,12 +90,13 @@ namespace HttpMonitor.Tests
             Assert.AreEqual("application/json", HeaderValue(record, "Content-Type"));
             Assert.AreEqual("yes", HeaderValue(record, "X-Custom"));
             Assert.AreEqual(2, record.RequestHeaders.Count);
+            Assert.AreEqual("application/json", EchoedHeader(record, "Content-Type"));
         }
 
         [UnityTest]
         public IEnumerator ExplicitContentType_WinsOverUploadHandler()
         {
-            const string url = "https://httpbin.org/post?from=explicit-content-type";
+            var url = TestServer.Shared.Url("echo?from=explicit-content-type");
 
             using (var request = UnityWebRequest.Post(url, "<a/>", "application/json"))
             {
@@ -106,7 +115,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator RequestWithoutHeaders_HasEmptyList()
         {
-            const string url = "https://example.com/?from=no-headers";
+            var url = TestServer.Shared.Url("echo?from=no-headers");
 
             using (var request = UnityWebRequest.Get(url))
                 yield return request.SendWebRequest();
@@ -120,7 +129,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator InvalidHeader_StillThrows_AndIsNotRecorded()
         {
-            const string url = "https://example.com/?from=invalid-header";
+            var url = TestServer.Shared.Url("echo?from=invalid-header");
 
             using (var request = UnityWebRequest.Get(url))
             {

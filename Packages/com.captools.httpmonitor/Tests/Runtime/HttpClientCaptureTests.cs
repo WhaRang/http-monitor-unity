@@ -31,7 +31,7 @@ namespace HttpMonitor.Tests
             Assert.IsTrue(task.IsCompleted, "timed out");
         }
 
-        private static string HeaderValue(HttpRecord record, string name)
+        private static string ResponseHeader(HttpRecord record, string name)
         {
             return record.ResponseHeaders.FirstOrDefault(h => h.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).Value;
         }
@@ -39,7 +39,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator DefaultConstructor_Get_IsRecordedWithBody()
         {
-            const string url = "https://example.com/?from=httpclient-get";
+            var url = TestServer.Shared.Url("echo?from=httpclient-get");
             string body = null;
 
             var task = Task.Run(async () =>
@@ -63,13 +63,13 @@ namespace HttpMonitor.Tests
             Assert.Greater(record.DurationMs, 0);
             Assert.AreEqual(body, Encoding.UTF8.GetString(record.ResponseBody));
             Assert.AreEqual(body.Length, record.DownloadedBytes);
-            Assert.IsNotEmpty(HeaderValue(record, "Content-Type"));
+            Assert.AreEqual("application/json", ResponseHeader(record, "Content-Type"));
         }
 
         [UnityTest]
         public IEnumerator HandlerConstructor_Post_RecordsRequestBodyAndHeaders()
         {
-            const string url = "https://httpbin.org/post?from=httpclient-post";
+            var url = TestServer.Shared.Url("echo?from=httpclient-post");
             const string payload = "{\"k\":\"v\"}";
 
             var task = Task.Run(async () =>
@@ -100,13 +100,14 @@ namespace HttpMonitor.Tests
             Assert.Contains("Content-Type", names, "content headers are merged in");
             Assert.AreEqual("<redacted>", record.RequestHeaders.First(h => h.Name == "Authorization").Value);
             Assert.That(record.RequestHeaders.First(h => h.Name == "Content-Type").Value, Does.StartWith("application/json"));
-            Assert.That(Encoding.UTF8.GetString(record.ResponseBody), Does.Contain("\"k\": \"v\""));
+            Assert.AreEqual(payload, Encoding.UTF8.GetString(record.ResponseBody));
+            Assert.AreEqual("Bearer secret", ResponseHeader(record, "X-Echo-Authorization"), "the wire is untouched");
         }
 
         [UnityTest]
-        public IEnumerator UnreachableHost_RecordsFailed_AndStillThrowsToTheCaller()
+        public IEnumerator ConnectionRefused_RecordsFailed_AndStillThrowsToTheCaller()
         {
-            const string url = "https://nonexistent.invalid/?from=httpclient-failed";
+            var url = TestServer.UnreachableUrl + "?from=httpclient-failed";
 
             var task = Task.Run(async () =>
             {
@@ -128,12 +129,12 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator Cancelled_RecordsAborted()
         {
-            const string url = "https://httpbin.org/delay/10?from=httpclient-cancelled";
+            var url = TestServer.Shared.Url("delay/5000?from=httpclient-cancelled");
 
             var task = Task.Run(async () =>
             {
                 using (var client = new HttpClient())
-                using (var cts = new CancellationTokenSource(500))
+                using (var cts = new CancellationTokenSource(300))
                     await client.GetAsync(url, cts.Token);
             });
 
@@ -150,7 +151,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator HttpErrorStatus_IsCompleted()
         {
-            const string url = "https://httpbin.org/status/500?from=httpclient-500";
+            var url = TestServer.Shared.Url("status/500?from=httpclient-500");
 
             var task = Task.Run(async () =>
             {
@@ -168,6 +169,71 @@ namespace HttpMonitor.Tests
             Assert.AreEqual(HttpRecordState.Completed, record.State);
             Assert.AreEqual(500, record.StatusCode);
             Assert.IsNull(record.Error);
+        }
+
+        [UnityTest]
+        public IEnumerator RepeatedResponseHeaders_AreKeptSeparately_AndRedacted()
+        {
+            var url = TestServer.Shared.Url("cookies?from=httpclient-cookies");
+
+            var task = Task.Run(async () =>
+            {
+                using (var client = new HttpClient())
+                    await client.GetStringAsync(url);
+            });
+
+            yield return Await(task);
+            Assert.IsFalse(task.IsFaulted, task.Exception?.ToString());
+
+            var record = Find(url);
+
+            Assert.NotNull(record);
+            var cookies = record.ResponseHeaders.Where(h => h.Name.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase)).ToList();
+            Assert.AreEqual(2, cookies.Count);
+            Assert.IsTrue(cookies.All(h => h.Value == "<redacted>"));
+        }
+
+        [UnityTest]
+        public IEnumerator ChunkedResponse_IsBufferedByDefault_AndSkippedWhenDisabled()
+        {
+            var options = HttpMonitorSession.Current.Options;
+            var buffered = TestServer.Shared.Url("chunked?from=buffered");
+            var skipped = TestServer.Shared.Url("chunked?from=skipped");
+            string bufferedBody = null;
+            string skippedBody = null;
+
+            var first = Task.Run(async () =>
+            {
+                using (var client = new HttpClient())
+                    bufferedBody = await client.GetStringAsync(buffered);
+            });
+
+            yield return Await(first);
+            Assert.IsFalse(first.IsFaulted, first.Exception?.ToString());
+
+            options.BufferUnknownLengthResponses = false;
+
+            var second = Task.Run(async () =>
+            {
+                using (var client = new HttpClient())
+                    skippedBody = await client.GetStringAsync(skipped);
+            });
+
+            yield return Await(second);
+            options.BufferUnknownLengthResponses = true;
+            Assert.IsFalse(second.IsFaulted, second.Exception?.ToString());
+
+            Assert.AreEqual("chunk-one;chunk-two", bufferedBody);
+            Assert.AreEqual("chunk-one;chunk-two", skippedBody, "the caller always gets the full body");
+
+            var bufferedRecord = Find(buffered);
+            Assert.NotNull(bufferedRecord);
+            Assert.AreEqual("chunk-one;chunk-two", Encoding.UTF8.GetString(bufferedRecord.ResponseBody));
+
+            var skippedRecord = Find(skipped);
+            Assert.NotNull(skippedRecord);
+            Assert.AreEqual(HttpRecordState.Completed, skippedRecord.State);
+            Assert.IsNull(skippedRecord.ResponseBody);
         }
     }
 }

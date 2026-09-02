@@ -187,7 +187,7 @@ namespace HttpMonitor.Tests
         [UnityTest]
         public IEnumerator Post_RecordsRequestBody_AndEchoedResponseBody()
         {
-            const string url = "https://httpbin.org/post?from=bodies";
+            var url = TestServer.Shared.Url("echo?from=bodies");
             const string payload = "{\"hello\":\"world\"}";
 
             using (var request = UnityWebRequest.Post(url, payload, "application/json"))
@@ -198,16 +198,42 @@ namespace HttpMonitor.Tests
             Assert.NotNull(record);
             Assert.AreEqual(payload, Encoding.UTF8.GetString(record.RequestBody));
             Assert.IsFalse(record.RequestBodyTruncated);
-            Assert.NotNull(record.ResponseBody);
-            Assert.That(Encoding.UTF8.GetString(record.ResponseBody), Does.Contain("\"hello\": \"world\""));
+            Assert.AreEqual(payload, Encoding.UTF8.GetString(record.ResponseBody));
             Assert.AreEqual(record.ResponseBody.Length, record.DownloadedBytes);
-            Assert.Greater(record.UploadedBytes, 0);
+            Assert.AreEqual(payload.Length, record.UploadedBytes);
+        }
+
+        [UnityTest]
+        public IEnumerator LargeResponse_IsTruncated_ButFullSizeIsKept()
+        {
+            var url = TestServer.Shared.Url("bytes/5000?from=large");
+            var options = HttpMonitorSession.Current.Options;
+            var previous = options.MaxBodyBytes;
+            options.MaxBodyBytes = 1000;
+
+            try
+            {
+                using (var request = UnityWebRequest.Get(url))
+                    yield return request.SendWebRequest();
+            }
+            finally
+            {
+                options.MaxBodyBytes = previous;
+            }
+
+            var record = Find(url);
+
+            Assert.NotNull(record);
+            Assert.AreEqual(1000, record.ResponseBody.Length);
+            Assert.IsTrue(record.ResponseBodyTruncated);
+            Assert.AreEqual(5000, record.DownloadedBytes);
+            Assert.AreEqual(Bytes(1000), record.ResponseBody);
         }
 
         [UnityTest]
         public IEnumerator FileDownloadHandler_RecordsSizeOnly()
         {
-            const string url = "https://example.com/?from=file-handler";
+            var url = TestServer.Shared.Url("bytes/300?from=file-handler");
             var path = Path.Combine(Application.temporaryCachePath, "httpmonitor-test.bin");
 
             using (var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbGET))
@@ -222,7 +248,7 @@ namespace HttpMonitor.Tests
             Assert.NotNull(record);
             Assert.AreEqual(HttpRecordState.Completed, record.State);
             Assert.IsNull(record.ResponseBody);
-            Assert.Greater(record.DownloadedBytes, 0);
+            Assert.AreEqual(300, record.DownloadedBytes);
 
             File.Delete(path);
         }

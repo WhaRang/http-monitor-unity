@@ -10,7 +10,7 @@ namespace HttpMonitor
 {
     /// <summary>
     /// Sits between an <see cref="HttpClient"/> and its real handler and records every exchange.
-    /// Installed by the woven <c>new HttpClient(...)</c> rewrite, and later by the manual API.
+    /// Installed by the woven <c>new HttpClient(...)</c> rewrite or by the manual API.
     /// Runs on thread-pool threads: the session is locked, and session events fire on this thread.
     ///
     /// Bodies: a request body is read only when its Content-Length is known and within the cap
@@ -21,8 +21,35 @@ namespace HttpMonitor
     /// </summary>
     internal sealed class MonitorHandler : DelegatingHandler
     {
-        public MonitorHandler(HttpMessageHandler innerHandler) : base(innerHandler)
+        private HttpCaptureSource _source;
+
+        public MonitorHandler(HttpMessageHandler innerHandler, HttpCaptureSource source) : base(innerHandler)
         {
+            _source = source;
+        }
+
+        public HttpCaptureSource Source => _source;
+
+        public void AddSource(HttpCaptureSource source)
+        {
+            _source |= source;
+        }
+
+        /// <summary>Walks a DelegatingHandler chain looking for an already-installed monitor.</summary>
+        public static MonitorHandler FindInChain(HttpMessageHandler handler)
+        {
+            while (handler != null)
+            {
+                if (handler is MonitorHandler monitor)
+                    return monitor;
+
+                if (!(handler is DelegatingHandler delegating))
+                    return null;
+
+                handler = delegating.InnerHandler;
+            }
+
+            return null;
         }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -58,7 +85,7 @@ namespace HttpMonitor
             return response;
         }
 
-        private static async Task<HttpRecord> TryBeginAsync(HttpMonitorSession session, HttpRequestMessage request)
+        private async Task<HttpRecord> TryBeginAsync(HttpMonitorSession session, HttpRequestMessage request)
         {
             try
             {
@@ -66,7 +93,7 @@ namespace HttpMonitor
                 var headers = CollectHeaders(request.Headers, request.Content?.Headers);
                 var url = request.RequestUri != null ? request.RequestUri.ToString() : string.Empty;
 
-                return session.Begin(HttpClientKind.HttpClient, HttpCaptureSource.Woven, request.Method.Method, url, headers, body);
+                return session.Begin(HttpClientKind.HttpClient, _source, request.Method.Method, url, headers, body);
             }
             catch (Exception e)
             {

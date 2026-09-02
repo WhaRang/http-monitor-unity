@@ -35,6 +35,7 @@ namespace HttpMonitor.CodeGen
         private const string IDisposableFullName = "System.IDisposable";
         private const string HttpClientFullName = "System.Net.Http.HttpClient";
         private const string HttpMessageHandlerFullName = "System.Net.Http.HttpMessageHandler";
+        private const string DoNotWeaveAttributeFullName = "HttpMonitor.DoNotWeaveAttribute";
 
         public int RewrittenCallSites { get; private set; }
         public List<string> Log { get; } = new List<string>();
@@ -45,6 +46,13 @@ namespace HttpMonitor.CodeGen
         public bool Weave(ModuleDefinition module)
         {
             _interceptor = null;
+
+            if (IsOptedOut(module))
+            {
+                Log.Add("skipped: [assembly: HttpMonitor.DoNotWeave]");
+
+                return false;
+            }
 
             foreach (var type in module.GetTypes())
             {
@@ -135,6 +143,16 @@ namespace HttpMonitor.CodeGen
 
             RewrittenCallSites++;
             Log.Add($"{method.FullName} @ IL_{instruction.Offset:x4}: {factoryName}");
+        }
+
+        private static bool IsOptedOut(ModuleDefinition module)
+        {
+            var assembly = module.Assembly;
+
+            if (assembly == null || !assembly.HasCustomAttributes)
+                return false;
+
+            return assembly.CustomAttributes.Any(a => a.AttributeType.FullName == DoNotWeaveAttributeFullName);
         }
 
         /// <summary>HttpClient(), HttpClient(HttpMessageHandler), HttpClient(HttpMessageHandler, bool).</summary>
