@@ -1,0 +1,4 @@
+<linker>
+  <!-- Woven call sites reference Interceptor; keep it intact under managed code stripping. -->
+  <assembly fullname="HttpMonitor.Runtime" preserve="all" />
+</linker>
