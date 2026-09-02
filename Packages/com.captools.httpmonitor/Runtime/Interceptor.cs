@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using UnityEngine.Networking;
 
@@ -45,6 +46,8 @@ namespace HttpMonitor
         private static readonly ConditionalWeakTable<UnityWebRequest, PreSend> PreSendByRequest = new ConditionalWeakTable<UnityWebRequest, PreSend>();
 
         private static readonly List<Pending> InFlight = new List<Pending>();
+
+        // ---------------------------------------------------------------- UnityWebRequest
 
         /// <summary>
         /// Replaces <c>request.SetRequestHeader(name, value)</c> at woven call sites.
@@ -121,6 +124,45 @@ namespace HttpMonitor
             request.Dispose();
         }
 
+        // ---------------------------------------------------------------- HttpClient
+
+        /// <summary>Replaces <c>new HttpClient()</c> at woven call sites.</summary>
+        public static HttpClient CreateHttpClient()
+        {
+            return CreateHttpClient(new HttpClientHandler(), true);
+        }
+
+        /// <summary>Replaces <c>new HttpClient(handler)</c> at woven call sites.</summary>
+        public static HttpClient CreateHttpClient(HttpMessageHandler handler)
+        {
+            return CreateHttpClient(handler, true);
+        }
+
+        /// <summary>
+        /// Replaces <c>new HttpClient(handler, disposeHandler)</c> at woven call sites. The monitor
+        /// handler wraps the user's handler; disposal semantics are unchanged because disposing the
+        /// wrapper disposes the inner handler exactly when HttpClient would have disposed it directly.
+        /// </summary>
+        public static HttpClient CreateHttpClient(HttpMessageHandler handler, bool disposeHandler)
+        {
+            MonitorHandler monitor = null;
+
+            try
+            {
+                if (handler != null)
+                    monitor = new MonitorHandler(handler);
+            }
+            catch (Exception e)
+            {
+                Warn("HttpClient instrumentation", e);
+            }
+
+            // Outside any try: a null handler throws ArgumentNullException exactly as before weaving.
+            return monitor != null ? new HttpClient(monitor, disposeHandler) : new HttpClient(handler, disposeHandler);
+        }
+
+        // ---------------------------------------------------------------- internals
+
         private static Pending TryBegin(UnityWebRequest request)
         {
             try
@@ -131,7 +173,8 @@ namespace HttpMonitor
                     return null;
 
                 var headers = TakeRequestHeaders(request);
-                var record = session.Begin(HttpClientKind.UnityWebRequest, HttpCaptureSource.Woven, request.method, request.url, headers);
+                var body = ReadRequestBody(request, session.Options);
+                var record = session.Begin(HttpClientKind.UnityWebRequest, HttpCaptureSource.Woven, request.method, request.url, headers, body);
 
                 var pending = new Pending
                 {
@@ -154,9 +197,31 @@ namespace HttpMonitor
             }
         }
 
+        /// <summary>Only a raw upload handler exposes its bytes; file and custom handlers are recorded by size.</summary>
+        private static byte[] ReadRequestBody(UnityWebRequest request, HttpMonitorOptions options)
+        {
+            if (!options.CaptureBodies)
+                return null;
+
+            return request.uploadHandler is UploadHandlerRaw raw ? raw.data : null;
+        }
+
         /// <summary>
-        /// Headers user code set, plus the Content-Type Unity derives from the upload handler when
-        /// user code did not set one itself. Anything Unity adds on its own beyond that (User-Agent,
+        /// Only a buffer download handler exposes its bytes. File, texture, audio, asset-bundle and
+        /// script handlers either throw on <c>data</c> or hold something that is not the wire body.
+        /// </summary>
+        private static byte[] ReadResponseBody(UnityWebRequest request, HttpMonitorOptions options)
+        {
+            if (!options.CaptureBodies)
+                return null;
+
+            return request.downloadHandler is DownloadHandlerBuffer buffer ? buffer.data : null;
+        }
+
+        /// <summary>
+        /// Headers user code set, plus the Content-Type the upload handler carries when user code did
+        /// not set one itself (Unity applies it natively at send time, so it is not visible through
+        /// GetRequestHeader before that). Anything Unity adds on its own beyond that (User-Agent,
         /// Accept-Encoding, Content-Length, ...) is invisible to us and is not recorded.
         /// </summary>
         private static IReadOnlyList<HttpHeader> TakeRequestHeaders(UnityWebRequest request)
@@ -171,9 +236,11 @@ namespace HttpMonitor
                     headers = new List<HttpHeader>(preSend.Headers);
             }
 
-            if (request.uploadHandler != null && FindHeader(headers, "Content-Type") < 0)
+            var uploadHandler = request.uploadHandler;
+
+            if (uploadHandler != null && FindHeader(headers, "Content-Type") < 0)
             {
-                var contentType = request.GetRequestHeader("Content-Type");
+                var contentType = uploadHandler.contentType;
 
                 if (!string.IsNullOrEmpty(contentType))
                     (headers ?? (headers = new List<HttpHeader>(1))).Add(new HttpHeader("Content-Type", contentType));
@@ -237,6 +304,7 @@ namespace HttpMonitor
                     DurationMs = ElapsedMs(pending),
                     StatusCode = request.responseCode,
                     ResponseHeaders = ToHeaders(request.GetResponseHeaders()),
+                    ResponseBody = ReadResponseBody(request, pending.Session.Options),
                     UploadedBytes = (long)request.uploadedBytes,
                     DownloadedBytes = (long)request.downloadedBytes,
                 };

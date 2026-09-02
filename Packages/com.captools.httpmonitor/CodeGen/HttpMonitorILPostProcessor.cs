@@ -32,14 +32,13 @@ namespace HttpMonitor.CodeGen
             "HttpMonitor.Editor",
         };
 
-        private static readonly string[] RequiredReferenceSuffixes =
-        {
-            "UnityEngine.UnityWebRequestModule.dll",
-            "UnityEngine.dll",
-        };
-
         public override ILPostProcessor GetInstance() => this;
 
+        /// <summary>
+        /// Every user assembly is scanned: UnityWebRequest lives in an engine module and HttpClient
+        /// in netstandard, both referenced by practically everything, so a reference filter would
+        /// not save work. The scan itself is cheap and leaves untouched assemblies untouched.
+        /// </summary>
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
             var name = compiledAssembly.Name;
@@ -50,11 +49,7 @@ namespace HttpMonitor.CodeGen
             if (SkipPrefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)))
                 return false;
 
-            if (compiledAssembly.Defines != null && compiledAssembly.Defines.Contains(DisableDefine))
-                return false;
-
-            return compiledAssembly.References.Any(r =>
-                RequiredReferenceSuffixes.Any(s => r.EndsWith(s, StringComparison.OrdinalIgnoreCase)));
+            return compiledAssembly.Defines == null || !compiledAssembly.Defines.Contains(DisableDefine);
         }
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)

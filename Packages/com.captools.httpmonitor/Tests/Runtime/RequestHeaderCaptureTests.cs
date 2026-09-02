@@ -38,7 +38,8 @@ namespace HttpMonitor.Tests
 
             Assert.NotNull(record);
             Assert.AreEqual(new[] { "X-First", "Authorization", "X-Last" }, record.RequestHeaders.Select(h => h.Name).ToArray());
-            Assert.AreEqual("Bearer secret", HeaderValue(record, "authorization")); // redaction arrives in step 4
+            Assert.AreEqual("1", HeaderValue(record, "x-first"));
+            Assert.AreEqual(HttpMonitorOptions.DefaultRedactedValue, HeaderValue(record, "authorization"), "Authorization must be redacted at record time");
             Assert.AreEqual(HttpCaptureSource.Woven, record.Source);
         }
 
@@ -123,7 +124,8 @@ namespace HttpMonitor.Tests
 
             using (var request = UnityWebRequest.Get(url))
             {
-                Assert.Throws<InvalidOperationException>(() => request.SetRequestHeader("Content-Length", "5"));
+                // Unity 6 accepts most names it used to reject (Content-Length included); an empty name still throws.
+                Assert.Throws<ArgumentException>(() => request.SetRequestHeader(string.Empty, "5"));
                 request.SetRequestHeader("X-Ok", "1");
 
                 yield return request.SendWebRequest();

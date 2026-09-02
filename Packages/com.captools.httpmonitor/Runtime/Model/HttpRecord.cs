@@ -14,11 +14,15 @@ namespace HttpMonitor
 
         public long Id { get; }
         public HttpClientKind Client { get; }
-        public HttpCaptureSource Source { get; }
+        public HttpCaptureSource Source { get; private set; }
         public string Method { get; }
         public string Url { get; }
         public DateTime StartedAtUtc { get; }
         public IReadOnlyList<HttpHeader> RequestHeaders { get; }
+
+        /// <summary>Request body up to the configured cap, or null when unavailable or capture is off.</summary>
+        public byte[] RequestBody { get; }
+        public bool RequestBodyTruncated { get; }
 
         public HttpRecordState State { get; private set; }
         public double DurationMs { get; private set; }
@@ -30,12 +34,19 @@ namespace HttpMonitor
         public string Error { get; private set; }
 
         public IReadOnlyList<HttpHeader> ResponseHeaders { get; private set; }
+
+        /// <summary>Response body up to the configured cap, or null when unavailable or capture is off.</summary>
+        public byte[] ResponseBody { get; private set; }
+        public bool ResponseBodyTruncated { get; private set; }
+
+        /// <summary>Full transfer sizes as reported by the client, independent of what was stored.</summary>
         public long UploadedBytes { get; private set; }
         public long DownloadedBytes { get; private set; }
 
         public bool IsFinished => State != HttpRecordState.Pending;
 
-        internal HttpRecord(long id, HttpClientKind client, HttpCaptureSource source, string method, string url, IReadOnlyList<HttpHeader> requestHeaders)
+        internal HttpRecord(long id, HttpClientKind client, HttpCaptureSource source, string method, string url,
+            IReadOnlyList<HttpHeader> requestHeaders, byte[] requestBody, bool requestBodyTruncated)
         {
             Id = id;
             Client = client;
@@ -44,8 +55,15 @@ namespace HttpMonitor
             Url = url ?? string.Empty;
             StartedAtUtc = DateTime.UtcNow;
             RequestHeaders = requestHeaders ?? NoHeaders;
+            RequestBody = requestBody;
+            RequestBodyTruncated = requestBodyTruncated;
             State = HttpRecordState.Pending;
             ResponseHeaders = NoHeaders;
+        }
+
+        internal void AddSource(HttpCaptureSource source)
+        {
+            Source |= source;
         }
 
         internal void Finish(HttpRecordOutcome outcome)
@@ -55,8 +73,26 @@ namespace HttpMonitor
             StatusCode = outcome.StatusCode;
             Error = outcome.Error;
             ResponseHeaders = outcome.ResponseHeaders ?? NoHeaders;
+            ResponseBody = outcome.ResponseBody;
+            ResponseBodyTruncated = outcome.ResponseBodyTruncated;
             UploadedBytes = outcome.UploadedBytes;
             DownloadedBytes = outcome.DownloadedBytes;
+        }
+
+        internal long StoredBodyBytes
+        {
+            get
+            {
+                long total = 0;
+
+                if (RequestBody != null)
+                    total += RequestBody.Length;
+
+                if (ResponseBody != null)
+                    total += ResponseBody.Length;
+
+                return total;
+            }
         }
 
         public override string ToString()
@@ -75,6 +111,8 @@ namespace HttpMonitor
         public long StatusCode;
         public string Error;
         public IReadOnlyList<HttpHeader> ResponseHeaders;
+        public byte[] ResponseBody;
+        public bool ResponseBodyTruncated;
         public long UploadedBytes;
         public long DownloadedBytes;
     }

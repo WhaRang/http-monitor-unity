@@ -21,6 +21,9 @@ namespace HttpMonitor.CodeGen
     ///   ((IDisposable)uwr).Dispose()          -> Interceptor.Dispose(uwr)   [what `using` emits;
     ///                                            matched only when the preceding instruction
     ///                                            loads a UnityWebRequest-typed local/field/arg]
+    ///   new HttpClient()                      -> Interceptor.CreateHttpClient()
+    ///   new HttpClient(handler)               -> Interceptor.CreateHttpClient(handler)
+    ///   new HttpClient(handler, dispose)      -> Interceptor.CreateHttpClient(handler, dispose)
     /// </summary>
     public sealed class Weaver
     {
@@ -30,6 +33,8 @@ namespace HttpMonitor.CodeGen
         private const string InterceptorTypeName = "Interceptor";
         private const string UnityWebRequestFullName = "UnityEngine.Networking.UnityWebRequest";
         private const string IDisposableFullName = "System.IDisposable";
+        private const string HttpClientFullName = "System.Net.Http.HttpClient";
+        private const string HttpMessageHandlerFullName = "System.Net.Http.HttpMessageHandler";
 
         public int RewrittenCallSites { get; private set; }
         public List<string> Log { get; } = new List<string>();
@@ -51,8 +56,17 @@ namespace HttpMonitor.CodeGen
                     for (var i = 0; i < instructions.Count; i++)
                     {
                         var instruction = instructions[i];
-                        if (instruction.OpCode != OpCodes.Callvirt && instruction.OpCode != OpCodes.Call) continue;
                         if (!(instruction.Operand is MethodReference target)) continue;
+
+                        if (instruction.OpCode == OpCodes.Newobj)
+                        {
+                            if (IsSupportedHttpClientConstructor(target))
+                                ReplaceConstructor(module, method, instruction, target, "CreateHttpClient");
+
+                            continue;
+                        }
+
+                        if (instruction.OpCode != OpCodes.Callvirt && instruction.OpCode != OpCodes.Call) continue;
 
                         if (IsUnityWebRequestMethod(target, "SendWebRequest", 0))
                         {
@@ -100,6 +114,47 @@ namespace HttpMonitor.CodeGen
 
             RewrittenCallSites++;
             Log.Add($"{method.FullName} @ IL_{instruction.Offset:x4}: {target.Name}");
+        }
+
+        /// <summary>
+        /// Rewrites <c>newobj T::.ctor(args)</c> into a static factory call taking the same args and
+        /// returning T. A constructor pushes one T; so does the factory, so the stack is unchanged.
+        /// </summary>
+        private void ReplaceConstructor(ModuleDefinition module, MethodDefinition method, Instruction instruction,
+            MethodReference constructor, string factoryName)
+        {
+            _interceptor = _interceptor ?? GetInterceptorType(module);
+
+            var replacement = new MethodReference(factoryName, constructor.DeclaringType, _interceptor) { HasThis = false };
+
+            foreach (var parameter in constructor.Parameters)
+                replacement.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
+
+            instruction.OpCode = OpCodes.Call;
+            instruction.Operand = module.ImportReference(replacement);
+
+            RewrittenCallSites++;
+            Log.Add($"{method.FullName} @ IL_{instruction.Offset:x4}: {factoryName}");
+        }
+
+        /// <summary>HttpClient(), HttpClient(HttpMessageHandler), HttpClient(HttpMessageHandler, bool).</summary>
+        private static bool IsSupportedHttpClientConstructor(MethodReference method)
+        {
+            if (method.Name != ".ctor" || method.DeclaringType == null || method.DeclaringType.FullName != HttpClientFullName)
+                return false;
+
+            switch (method.Parameters.Count)
+            {
+                case 0:
+                    return true;
+                case 1:
+                    return method.Parameters[0].ParameterType.FullName == HttpMessageHandlerFullName;
+                case 2:
+                    return method.Parameters[0].ParameterType.FullName == HttpMessageHandlerFullName
+                        && method.Parameters[1].ParameterType.FullName == "System.Boolean";
+                default:
+                    return false;
+            }
         }
 
         private static bool IsUnityWebRequestMethod(MethodReference method, string name, int parameterCount)
