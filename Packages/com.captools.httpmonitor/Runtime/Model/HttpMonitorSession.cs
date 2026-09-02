@@ -83,13 +83,13 @@ namespace HttpMonitor
             Raise(Cleared, nameof(Cleared));
         }
 
-        internal HttpRecord Begin(HttpClientKind client, string method, string url, IReadOnlyList<HttpHeader> requestHeaders)
+        internal HttpRecord Begin(HttpClientKind client, HttpCaptureSource source, string method, string url, IReadOnlyList<HttpHeader> requestHeaders)
         {
             HttpRecord record;
 
             lock (_gate)
             {
-                record = new HttpRecord(++_lastId, client, method, url, requestHeaders);
+                record = new HttpRecord(++_lastId, client, source, method, url, requestHeaders);
 
                 if (_count == _ring.Length)
                 {

@@ -16,6 +16,7 @@ namespace HttpMonitor.CodeGen
     ///
     /// Rules:
     ///   uwr.SendWebRequest()                  -> Interceptor.SendWebRequest(uwr)
+    ///   uwr.SetRequestHeader(name, value)     -> Interceptor.SetRequestHeader(uwr, name, value)
     ///   uwr.Dispose()                         -> Interceptor.Dispose(uwr)
     ///   ((IDisposable)uwr).Dispose()          -> Interceptor.Dispose(uwr)   [what `using` emits;
     ///                                            matched only when the preceding instruction
@@ -53,19 +54,23 @@ namespace HttpMonitor.CodeGen
                         if (instruction.OpCode != OpCodes.Callvirt && instruction.OpCode != OpCodes.Call) continue;
                         if (!(instruction.Operand is MethodReference target)) continue;
 
-                        if (IsUnityWebRequestMethod(target, "SendWebRequest"))
+                        if (IsUnityWebRequestMethod(target, "SendWebRequest", 0))
                         {
-                            Replace(module, method, instruction, "SendWebRequest", target.ReturnType, target.DeclaringType);
+                            Replace(module, method, instruction, target, target.DeclaringType);
                         }
-                        else if (IsUnityWebRequestMethod(target, "Dispose"))
+                        else if (IsUnityWebRequestMethod(target, "SetRequestHeader", 2))
                         {
-                            Replace(module, method, instruction, "Dispose", target.ReturnType, target.DeclaringType);
+                            Replace(module, method, instruction, target, target.DeclaringType);
+                        }
+                        else if (IsUnityWebRequestMethod(target, "Dispose", 0))
+                        {
+                            Replace(module, method, instruction, target, target.DeclaringType);
                         }
                         else if (IsInterfaceDispose(target) && i > 0)
                         {
                             var loaded = LoadedType(method, instructions[i - 1]);
                             if (loaded != null && loaded.FullName == UnityWebRequestFullName)
-                                Replace(module, method, instruction, "Dispose", target.ReturnType, loaded);
+                                Replace(module, method, instruction, target, loaded);
                         }
                     }
                 }
@@ -74,25 +79,33 @@ namespace HttpMonitor.CodeGen
             return RewrittenCallSites > 0;
         }
 
+        /// <summary>
+        /// Rewrites an instance call into a static Interceptor call of the same name whose first
+        /// parameter is the receiver, followed by the original parameters. Return type is unchanged,
+        /// so the evaluation stack is identical before and after.
+        /// </summary>
         private void Replace(ModuleDefinition module, MethodDefinition method, Instruction instruction,
-            string interceptorMethod, TypeReference returnType, TypeReference parameterType)
+            MethodReference target, TypeReference receiverType)
         {
             _interceptor = _interceptor ?? GetInterceptorType(module);
 
-            var replacement = new MethodReference(interceptorMethod, returnType, _interceptor) { HasThis = false };
-            replacement.Parameters.Add(new ParameterDefinition(parameterType));
+            var replacement = new MethodReference(target.Name, target.ReturnType, _interceptor) { HasThis = false };
+            replacement.Parameters.Add(new ParameterDefinition(receiverType));
+
+            foreach (var parameter in target.Parameters)
+                replacement.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
 
             instruction.OpCode = OpCodes.Call;
             instruction.Operand = module.ImportReference(replacement);
 
             RewrittenCallSites++;
-            Log.Add($"{method.FullName} @ IL_{instruction.Offset:x4}: {interceptorMethod}");
+            Log.Add($"{method.FullName} @ IL_{instruction.Offset:x4}: {target.Name}");
         }
 
-        private static bool IsUnityWebRequestMethod(MethodReference method, string name)
+        private static bool IsUnityWebRequestMethod(MethodReference method, string name, int parameterCount)
         {
             return method.HasThis
-                && !method.HasParameters
+                && method.Parameters.Count == parameterCount
                 && method.Name == name
                 && method.DeclaringType != null
                 && method.DeclaringType.FullName == UnityWebRequestFullName;

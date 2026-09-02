@@ -47,7 +47,7 @@ namespace HttpMonitor.Tests
             var session = new HttpMonitorSession(4);
             session.RecordAdded += ThrowingSubscriber;
 
-            var record = session.Begin(HttpClientKind.Manual, "GET", "https://example.com/", null);
+            var record = session.Begin(HttpClientKind.Custom, HttpCaptureSource.Manual, "GET", "https://example.com/", null);
 
             Assert.NotNull(record);
             Assert.AreEqual(1, session.Count);
@@ -66,7 +66,7 @@ namespace HttpMonitor.Tests
             var session = new HttpMonitorSession(4);
             session.RecordAdded += ThrowingSubscriber;
 
-            var record = session.Begin(HttpClientKind.Manual, "GET", "https://example.com/", null);
+            var record = session.Begin(HttpClientKind.Custom, HttpCaptureSource.Manual, "GET", "https://example.com/", null);
 
             Assert.NotNull(record);
         }

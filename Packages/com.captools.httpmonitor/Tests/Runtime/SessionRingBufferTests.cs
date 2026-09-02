@@ -9,7 +9,7 @@ namespace HttpMonitor.Tests
     {
         private static HttpRecord Begin(HttpMonitorSession session, int n)
         {
-            return session.Begin(HttpClientKind.Manual, "GET", "https://example.com/" + n, null);
+            return session.Begin(HttpClientKind.Custom, HttpCaptureSource.Manual, "GET", "https://example.com/" + n, null);
         }
 
         [Test]

@@ -14,6 +14,7 @@ namespace HttpMonitor
 
         public long Id { get; }
         public HttpClientKind Client { get; }
+        public HttpCaptureSource Source { get; }
         public string Method { get; }
         public string Url { get; }
         public DateTime StartedAtUtc { get; }
@@ -34,10 +35,11 @@ namespace HttpMonitor
 
         public bool IsFinished => State != HttpRecordState.Pending;
 
-        internal HttpRecord(long id, HttpClientKind client, string method, string url, IReadOnlyList<HttpHeader> requestHeaders)
+        internal HttpRecord(long id, HttpClientKind client, HttpCaptureSource source, string method, string url, IReadOnlyList<HttpHeader> requestHeaders)
         {
             Id = id;
             Client = client;
+            Source = source;
             Method = method ?? string.Empty;
             Url = url ?? string.Empty;
             StartedAtUtc = DateTime.UtcNow;

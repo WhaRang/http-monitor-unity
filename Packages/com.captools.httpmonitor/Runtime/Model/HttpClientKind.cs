@@ -5,6 +5,8 @@ namespace HttpMonitor
     {
         UnityWebRequest,
         HttpClient,
-        Manual,
+
+        /// <summary>Anything else, described through the manual capture API (Best HTTP, a custom socket client, ...).</summary>
+        Custom,
     }
 }

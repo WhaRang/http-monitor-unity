@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using UnityEngine.Networking;
 
 namespace HttpMonitor
@@ -11,6 +12,8 @@ namespace HttpMonitor
     /// means updating <c>Unity.HttpMonitor.CodeGen</c> too.
     ///
     /// Rule: nothing in here may throw into user code. Capture failures degrade to a warning.
+    /// Every real UnityWebRequest call happens outside any try, so the game's exception behaviour
+    /// is exactly what it was before weaving.
     ///
     /// Response timing (M0 finding): when a coroutine does <c>yield return request.SendWebRequest()</c>,
     /// native completion resumes the coroutine synchronously and the managed <c>completed</c> event
@@ -20,6 +23,12 @@ namespace HttpMonitor
     /// </summary>
     public static class Interceptor
     {
+        /// <summary>What we learn about a request before it is sent. Lives in a weak side table keyed by the request.</summary>
+        private sealed class PreSend
+        {
+            public readonly List<HttpHeader> Headers = new List<HttpHeader>();
+        }
+
         private sealed class Pending
         {
             public UnityWebRequest Request;
@@ -29,7 +38,36 @@ namespace HttpMonitor
             public bool Claimed;
         }
 
+        /// <summary>
+        /// UnityWebRequest cannot enumerate its own request headers, so we remember what user code
+        /// sets. Weak keys: a request that is never sent costs nothing once it is collected.
+        /// </summary>
+        private static readonly ConditionalWeakTable<UnityWebRequest, PreSend> PreSendByRequest = new ConditionalWeakTable<UnityWebRequest, PreSend>();
+
         private static readonly List<Pending> InFlight = new List<Pending>();
+
+        /// <summary>
+        /// Replaces <c>request.SetRequestHeader(name, value)</c> at woven call sites.
+        /// Stack shape: request, name, value in; nothing out.
+        /// </summary>
+        public static void SetRequestHeader(UnityWebRequest request, string name, string value)
+        {
+            // Real call first and outside any try: an invalid header, or a request already sent,
+            // throws exactly as before, and nothing gets recorded for it.
+            request.SetRequestHeader(name, value);
+
+            try
+            {
+                var preSend = PreSendByRequest.GetValue(request, _ => new PreSend());
+
+                lock (preSend.Headers)
+                    SetOrReplace(preSend.Headers, name, value);
+            }
+            catch (Exception e)
+            {
+                Warn("header capture", e);
+            }
+        }
 
         /// <summary>
         /// Replaces <c>request.SendWebRequest()</c> at woven call sites.
@@ -39,7 +77,6 @@ namespace HttpMonitor
         {
             var pending = TryBegin(request);
 
-            // Deliberately outside any try: the user's exception behaviour must be untouched.
             var operation = request.SendWebRequest();
 
             if (pending != null)
@@ -80,7 +117,7 @@ namespace HttpMonitor
                 Warn("capture on dispose", e);
             }
 
-            // Outside any try: a null request throws NullReferenceException exactly as before weaving.
+            // A null request throws NullReferenceException exactly as before weaving.
             request.Dispose();
         }
 
@@ -93,7 +130,8 @@ namespace HttpMonitor
                 if (!session.IsRecording)
                     return null;
 
-                var record = session.Begin(HttpClientKind.UnityWebRequest, request.method, request.url, null);
+                var headers = TakeRequestHeaders(request);
+                var record = session.Begin(HttpClientKind.UnityWebRequest, HttpCaptureSource.Woven, request.method, request.url, headers);
 
                 var pending = new Pending
                 {
@@ -114,6 +152,60 @@ namespace HttpMonitor
 
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Headers user code set, plus the Content-Type Unity derives from the upload handler when
+        /// user code did not set one itself. Anything Unity adds on its own beyond that (User-Agent,
+        /// Accept-Encoding, Content-Length, ...) is invisible to us and is not recorded.
+        /// </summary>
+        private static IReadOnlyList<HttpHeader> TakeRequestHeaders(UnityWebRequest request)
+        {
+            List<HttpHeader> headers = null;
+
+            if (PreSendByRequest.TryGetValue(request, out var preSend))
+            {
+                PreSendByRequest.Remove(request);
+
+                lock (preSend.Headers)
+                    headers = new List<HttpHeader>(preSend.Headers);
+            }
+
+            if (request.uploadHandler != null && FindHeader(headers, "Content-Type") < 0)
+            {
+                var contentType = request.GetRequestHeader("Content-Type");
+
+                if (!string.IsNullOrEmpty(contentType))
+                    (headers ?? (headers = new List<HttpHeader>(1))).Add(new HttpHeader("Content-Type", contentType));
+            }
+
+            return headers;
+        }
+
+        /// <summary>UnityWebRequest replaces on repeated SetRequestHeader; mirror that, case-insensitively.</summary>
+        private static void SetOrReplace(List<HttpHeader> headers, string name, string value)
+        {
+            var index = FindHeader(headers, name);
+            var header = new HttpHeader(name, value);
+
+            if (index < 0)
+                headers.Add(header);
+            else
+                headers[index] = header;
+        }
+
+        private static int FindHeader(List<HttpHeader> headers, string name)
+        {
+            if (headers == null)
+                return -1;
+
+            for (var i = 0; i < headers.Count; i++)
+            {
+                if (string.Equals(headers[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+
+            return -1;
         }
 
         private static Pending FindPending(UnityWebRequest request)
