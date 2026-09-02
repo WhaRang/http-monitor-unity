@@ -10,7 +10,7 @@ using Unity.CompilationPipeline.Common.ILPostProcessing;
 namespace HttpMonitor.CodeGen
 {
     /// <summary>
-    /// Unity discovers this class because the containing assembly's name ends in ".CodeGen".
+    /// Unity discovers this class because the containing assembly's name matches "Unity.*.CodeGen".
     /// It runs in Unity's compilation pipeline process after each assembly compiles: no UnityEditor
     /// API is available here, configuration arrives via scripting defines and files on disk.
     /// </summary>
@@ -22,8 +22,14 @@ namespace HttpMonitor.CodeGen
         private static readonly string[] SkipPrefixes =
         {
             "Unity.", "UnityEngine.", "UnityEditor.",
-            "HttpMonitor.",
             "Mono.", "System.", "mscorlib", "netstandard", "nunit.",
+        };
+
+        /// <summary>Our own code calls the real SendWebRequest/Dispose and must never be rewritten.</summary>
+        private static readonly string[] SkipExact =
+        {
+            "HttpMonitor.Runtime",
+            "HttpMonitor.Editor",
         };
 
         private static readonly string[] RequiredReferenceSuffixes =
@@ -37,10 +43,13 @@ namespace HttpMonitor.CodeGen
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
             var name = compiledAssembly.Name;
-            
+
+            if (SkipExact.Contains(name))
+                return false;
+
             if (SkipPrefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)))
                 return false;
-            
+
             if (compiledAssembly.Defines != null && compiledAssembly.Defines.Contains(DisableDefine))
                 return false;
 
@@ -50,8 +59,6 @@ namespace HttpMonitor.CodeGen
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)
         {
-            var diagnostics = new List<DiagnosticMessage>();
-
             try
             {
                 var input = compiledAssembly.InMemoryAssembly;
@@ -72,84 +79,39 @@ namespace HttpMonitor.CodeGen
                     using (var assembly = AssemblyDefinition.ReadAssembly(peStream, readerParameters))
                     {
                         var weaver = new Weaver();
-                        var changed = weaver.Weave(assembly.MainModule);
 
-                        SpikeLog.Write(compiledAssembly, weaver);
-
-                        if (!changed) 
-                            return null;
+                        if (!weaver.Weave(assembly.MainModule))
+                            return null; // Unity keeps the original bytes.
 
                         var peOut = new MemoryStream();
                         var pdbOut = new MemoryStream();
-                        
+
                         var writerParameters = new WriterParameters
                         {
                             WriteSymbols = hasSymbols,
                             SymbolWriterProvider = hasSymbols ? new PortablePdbWriterProvider() : null,
                             SymbolStream = hasSymbols ? pdbOut : null,
                         };
-                        
+
                         assembly.Write(peOut, writerParameters);
 
-                        diagnostics.Add(new DiagnosticMessage
-                        {
-                            DiagnosticType = DiagnosticType.Warning, // Spike: visible in the Console. Downgrade later.
-                            MessageData = $"[HttpMonitor] wove {weaver.RewrittenCallSites} call site(s) in {compiledAssembly.Name}",
-                        });
-
-                        return new ILPostProcessResult(new InMemoryAssembly(peOut.ToArray(), pdbOut.ToArray()), diagnostics);
+                        return new ILPostProcessResult(new InMemoryAssembly(peOut.ToArray(), pdbOut.ToArray()));
                     }
                 }
             }
             catch (Exception e)
             {
-                diagnostics.Add(new DiagnosticMessage
+                // A broken debugger must never break the build: warn and hand back the untouched assembly.
+                var diagnostics = new List<DiagnosticMessage>
                 {
-                    DiagnosticType = DiagnosticType.Warning,
-                    MessageData = $"[HttpMonitor] weaver failed on {compiledAssembly.Name}, assembly left unmodified: {e}",
-                });
-                
-                return new ILPostProcessResult(compiledAssembly.InMemoryAssembly, diagnostics);
-            }
-        }
-    }
-
-    /// <summary>
-    /// M0 only: records what the weaver process sees (working directory, defines, references) so
-    /// the plan's open questions about the ILPP environment get answered from a real run.
-    /// Written to Library/HttpMonitor/weaver.log relative to the process working directory.
-    /// </summary>
-    internal static class SpikeLog
-    {
-        private static readonly object Gate = new object();
-
-        public static void Write(ICompiledAssembly compiledAssembly, Weaver weaver)
-        {
-            try
-            {
-                var cwd = Directory.GetCurrentDirectory();
-                var libraryDir = Path.Combine(cwd, "Library");
-                if (!Directory.Exists(libraryDir)) return;
-
-                var dir = Path.Combine(libraryDir, "HttpMonitor");
-                Directory.CreateDirectory(dir);
-
-                var lines = new List<string>
-                {
-                    $"=== {DateTime.Now:O} {compiledAssembly.Name}",
-                    $"cwd: {cwd}",
-                    $"defines: {string.Join(" ", compiledAssembly.Defines ?? Array.Empty<string>())}",
-                    $"references: {compiledAssembly.References.Length}",
-                    $"rewritten: {weaver.RewrittenCallSites}",
+                    new DiagnosticMessage
+                    {
+                        DiagnosticType = DiagnosticType.Warning,
+                        MessageData = $"[HttpMonitor] weaver failed on {compiledAssembly.Name}, assembly left unmodified: {e}",
+                    },
                 };
-                lines.AddRange(weaver.Log.Select(l => "  " + l));
-                lines.Add(string.Empty);
 
-                lock (Gate) File.AppendAllLines(Path.Combine(dir, "weaver.log"), lines);
-            }
-            catch
-            {
-                // Diagnostics only; never let logging affect the build.
+                return new ILPostProcessResult(compiledAssembly.InMemoryAssembly, diagnostics);
             }
         }
     }

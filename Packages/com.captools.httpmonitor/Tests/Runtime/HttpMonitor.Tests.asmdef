@@ -1,6 +1,6 @@
 {
-    "name": "Spike.Tests.WithRef",
-    "rootNamespace": "Spike.Tests.WithRef",
+    "name": "HttpMonitor.Tests",
+    "rootNamespace": "HttpMonitor.Tests",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",

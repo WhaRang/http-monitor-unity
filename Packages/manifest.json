@@ -1,4 +1,5 @@
 {
+  "testables": ["com.captools.httpmonitor"],
   "dependencies": {
     "com.unity.2d.animation": "13.0.5",
     "com.unity.2d.aseprite": "3.0.2",
