@@ -61,7 +61,7 @@ namespace HttpMonitor.Editor
             }
         }
 
-        /// <summary>Badge letters for the name cell.</summary>
+        /// <summary>Badge letters for the source column.</summary>
         public static string SourceBadge(HttpCaptureSource source)
         {
             switch (source)
@@ -70,6 +70,18 @@ namespace HttpMonitor.Editor
                 case HttpCaptureSource.Manual: return "M";
                 case HttpCaptureSource.Woven | HttpCaptureSource.Manual: return "A+M";
                 default: return "?";
+            }
+        }
+
+        /// <summary>USS class carrying the badge colour: green for automatic, blue for manual, purple for both.</summary>
+        public static string SourceClass(HttpCaptureSource source)
+        {
+            switch (source)
+            {
+                case HttpCaptureSource.Woven: return "hm-source-badge--automatic";
+                case HttpCaptureSource.Manual: return "hm-source-badge--manual";
+                case HttpCaptureSource.Woven | HttpCaptureSource.Manual: return "hm-source-badge--both";
+                default: return "hm-source-badge--unknown";
             }
         }
 

@@ -7,8 +7,9 @@ using UnityEngine.UIElements;
 namespace HttpMonitor.Editor
 {
     /// <summary>
-    /// The traffic window: toolbar, request table, detail pane, status bar. Reads the Editor store
-    /// only; all capture happens in the runtime and reaches the store through the session bridge.
+    /// The traffic window: toolbar, filter bar, optional timeline, request table, detail pane,
+    /// status bar. Reads the Editor store only; all capture happens in the runtime and reaches the
+    /// store through the session bridge.
     /// </summary>
     public sealed class HttpMonitorWindow : EditorWindow
     {
@@ -16,10 +17,16 @@ namespace HttpMonitor.Editor
         private const string StyleSheetPath = "Packages/com.captools.httpmonitor/Editor/UI/HttpMonitorWindow.uss";
         private const string LayoutPrefKey = "HttpMonitor.Window.ListOnLeft";
         private const string AutoScrollPrefKey = "HttpMonitor.Window.AutoScroll";
+        private const string TimelinePrefKey = "HttpMonitor.Window.Timeline";
+
+        private readonly RecordQuery _query = new RecordQuery();
 
         private TwoPaneSplitView _split;
+        private FilterBar _filterBar;
+        private TimelineView _timeline;
         private RecordListView _list;
         private VisualElement _empty;
+        private Label _emptyTitle;
         private Label _emptyText;
         private Label _detailPlaceholder;
         private Label _detailSummary;
@@ -27,9 +34,10 @@ namespace HttpMonitor.Editor
         private VisualElement _recordDot;
         private ToolbarToggle _recordToggle;
         private ToolbarToggle _preserveToggle;
+        private ToolbarToggle _timelineToggle;
         private ToolbarButton _layoutButton;
         private bool _refreshScheduled;
-        private string _hostFilter;
+        private List<EditorRecord> _visible = new List<EditorRecord>();
 
         [MenuItem(MenuPath)]
         public static void Open()
@@ -51,10 +59,16 @@ namespace HttpMonitor.Editor
             set => EditorPrefs.SetBool(AutoScrollPrefKey, value);
         }
 
+        private static bool ShowTimeline
+        {
+            get => EditorPrefs.GetBool(TimelinePrefKey, false);
+            set => EditorPrefs.SetBool(TimelinePrefKey, value);
+        }
+
         private void OnEnable()
         {
             titleContent = new GUIContent("HTTP Monitor", LoadIcon());
-            minSize = new Vector2(480, 240);
+            minSize = new Vector2(520, 260);
         }
 
         private void OnDisable()
@@ -74,12 +88,25 @@ namespace HttpMonitor.Editor
                 root.styleSheets.Add(styleSheet);
 
             root.Add(BuildToolbar());
+
+            _filterBar = new FilterBar(_query);
+            _filterBar.Changed += OnQueryChanged;
+            root.Add(_filterBar);
+
             root.Add(BuildSplit());
+            root.Add(BuildTimeline());
             root.Add(BuildStatusBar());
+
+            root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
 
             Unsubscribe();
             Store.Buffer.Changed += ScheduleRefresh;
             Store.Buffer.RecordUpdated += OnRecordUpdated;
+
+            // The header may come back already sorted from persisted view data.
+            _list.GetSort(out var sortBy, out var descending);
+            _query.SortBy = sortBy;
+            _query.SortDescending = descending;
 
             Refresh();
         }
@@ -125,6 +152,15 @@ namespace HttpMonitor.Editor
             });
             toolbar.Add(autoScroll);
 
+            _timelineToggle = new ToolbarToggle { text = "Timeline", tooltip = "Show the requests as bars on a time axis at the bottom of the window" };
+            _timelineToggle.SetValueWithoutNotify(ShowTimeline);
+            _timelineToggle.RegisterValueChangedCallback(e =>
+            {
+                ShowTimeline = e.newValue;
+                UpdateTimelineVisibility();
+            });
+            toolbar.Add(_timelineToggle);
+
             var spacer = new VisualElement();
             spacer.AddToClassList("hm-toolbar-spacer");
             toolbar.Add(spacer);
@@ -145,21 +181,28 @@ namespace HttpMonitor.Editor
             listPane.AddToClassList("hm-list-pane");
 
             _list = new RecordListView { AutoScrollEnabled = AutoScroll };
-            _list.SelectionChanged += ShowSelection;
+            _list.SelectionChanged += OnSelectionChanged;
+            _list.SortChanged += (column, descending) =>
+            {
+                _query.SortBy = column;
+                _query.SortDescending = descending;
+                OnQueryChanged();
+            };
             _list.FilterByHostRequested += host =>
             {
-                _hostFilter = host;
-                Refresh();
+                _query.Host = host;
+                _filterBar.SyncFromQuery();
+                OnQueryChanged();
             };
             listPane.Add(_list);
 
             _empty = new VisualElement { name = "hm-empty", pickingMode = PickingMode.Ignore };
             _empty.AddToClassList("hm-empty");
-            var emptyTitle = new Label("No requests yet");
-            emptyTitle.AddToClassList("hm-empty-title");
+            _emptyTitle = new Label("No requests yet");
+            _emptyTitle.AddToClassList("hm-empty-title");
             _emptyText = new Label();
             _emptyText.AddToClassList("hm-empty-text");
-            _empty.Add(emptyTitle);
+            _empty.Add(_emptyTitle);
             _empty.Add(_emptyText);
             listPane.Add(_empty);
 
@@ -176,6 +219,16 @@ namespace HttpMonitor.Editor
             _split.Add(detailPane);
 
             return _split;
+        }
+
+        /// <summary>The timeline sits under the split, full width, whatever the layout orientation.</summary>
+        private VisualElement BuildTimeline()
+        {
+            _timeline = new TimelineView();
+            _timeline.BarClicked += record => _list.Select(record);
+            UpdateTimelineVisibility();
+
+            return _timeline;
         }
 
         private VisualElement BuildStatusBar()
@@ -204,10 +257,28 @@ namespace HttpMonitor.Editor
             });
         }
 
+        private void OnQueryChanged()
+        {
+            _filterBar.SyncFromQuery();
+            Refresh();
+        }
+
         private void OnRecordUpdated(EditorRecord record)
         {
-            // A pending row finishing is the hot path during Play: repaint that row only.
+            // A pending row finishing is the hot path during Play: repaint that row only, unless the
+            // change moves it in or out of the current filter or sort, in which case rebuild.
+            var wasVisible = _visible.Contains(record);
+            var isVisible = _query.Matches(record);
+
+            if (wasVisible != isVisible || _query.SortBy != SortColumn.Arrival)
+            {
+                ScheduleRefresh();
+
+                return;
+            }
+
             _list?.RefreshRow(record);
+            _timeline?.RefreshRecord(record);
 
             if (_list?.SelectedRecord == record)
                 ShowSelection(record);
@@ -215,44 +286,65 @@ namespace HttpMonitor.Editor
             UpdateStatusBar();
         }
 
+        private void OnSelectionChanged(EditorRecord record)
+        {
+            _timeline.SetSelected(record);
+            ShowSelection(record);
+        }
+
         private void Refresh()
         {
             if (_list == null)
                 return;
 
-            _list.SetRecords(VisibleRecords());
+            var sorted = _query.SortBy != SortColumn.Arrival;
+            var filtered = _query.Filter(Store.Buffer.Records);
+            _visible = sorted ? _query.Apply(Store.Buffer.Records) : filtered;
+
+            _list.SetRecords(_visible, sorted);
+            _timeline.SetRecords(filtered); // time order, whatever the table is sorted by
+            _filterBar.SetAvailableMethods(MethodsSeen());
 
             var total = Store.Buffer.Count;
-            _empty.style.display = total == 0 ? DisplayStyle.Flex : DisplayStyle.None;
-            _emptyText.text = Store.IsRecording
-                ? "Press Play. Requests made with UnityWebRequest or HttpClient appear here automatically, no setup needed."
-                : "Recording is paused. Turn on Record in the toolbar to capture requests.";
+            var showEmpty = _visible.Count == 0;
+            _empty.style.display = showEmpty ? DisplayStyle.Flex : DisplayStyle.None;
+
+            if (showEmpty)
+            {
+                if (total > 0)
+                {
+                    _emptyTitle.text = "No requests match";
+                    _emptyText.text = $"{total} request{(total == 1 ? "" : "s")} hidden by the current filters ({_query.Describe()}).";
+                }
+                else
+                {
+                    _emptyTitle.text = "No requests yet";
+                    _emptyText.text = Store.IsRecording
+                        ? "Press Play. Requests made with UnityWebRequest or HttpClient appear here automatically, no setup needed."
+                        : "Recording is paused. Turn on Record in the toolbar to capture requests.";
+                }
+            }
 
             _recordDot.EnableInClassList("hm-record-dot--paused", !Store.IsRecording);
             _recordToggle.SetValueWithoutNotify(Store.IsRecording);
             _preserveToggle.SetValueWithoutNotify(Store.PreserveLog);
 
             UpdateStatusBar();
+            _timeline.SetSelected(_list.SelectedRecord);
             ShowSelection(_list.SelectedRecord);
         }
 
-        /// <summary>The records the list shows. Step 4 replaces the host-only filter with the real filter bar.</summary>
-        private IReadOnlyList<EditorRecord> VisibleRecords()
+        private IEnumerable<string> MethodsSeen()
         {
-            var all = Store.Buffer.Records;
+            var seen = new SortedSet<string>();
 
-            if (string.IsNullOrEmpty(_hostFilter))
-                return all;
-
-            var filtered = new List<EditorRecord>(all.Count);
-
-            foreach (var record in all)
+            foreach (var record in Store.Buffer.Records)
             {
-                if (RecordFormat.Host(record.Url) == _hostFilter)
-                    filtered.Add(record);
+                if (!string.IsNullOrEmpty(record.Method))
+                    seen.Add(record.Method.ToUpperInvariant());
             }
 
-            return filtered;
+            return seen;
         }
 
         private void UpdateStatusBar()
@@ -270,11 +362,14 @@ namespace HttpMonitor.Editor
             }
 
             var parts = new List<string>();
-            var shown = _list?.Count ?? records.Count;
 
-            parts.Add(shown == records.Count
-                ? $"{records.Count} request{(records.Count == 1 ? "" : "s")}"
-                : $"{shown} of {records.Count} requests shown (host: {_hostFilter})");
+            if (_query.IsFiltering)
+                parts.Add($"{_visible.Count} of {records.Count} shown ({_query.Describe()})");
+            else
+                parts.Add($"{records.Count} request{(records.Count == 1 ? "" : "s")}");
+
+            if (_query.SortBy != SortColumn.Arrival)
+                parts.Add($"sorted by {_query.SortBy.ToString().ToLowerInvariant()}{(_query.SortDescending ? " ↓" : " ↑")}");
 
             if (pending > 0)
                 parts.Add($"{pending} pending");
@@ -312,6 +407,20 @@ namespace HttpMonitor.Editor
             lines.Add($"{record.RequestHeaders.Length} request header(s), {record.ResponseHeaders.Length} response header(s). Full detail view arrives in M2 step 5.");
 
             _detailSummary.text = string.Join("\n", lines);
+        }
+
+        private void OnKeyDown(KeyDownEvent e)
+        {
+            if (e.keyCode == KeyCode.F && e.actionKey)
+            {
+                _filterBar.FocusSearch();
+                e.StopPropagation();
+            }
+        }
+
+        private void UpdateTimelineVisibility()
+        {
+            _timeline.style.display = ShowTimeline ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void ToggleLayout()

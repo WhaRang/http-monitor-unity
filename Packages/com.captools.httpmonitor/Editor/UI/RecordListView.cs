@@ -9,8 +9,12 @@ namespace HttpMonitor.Editor
     /// <summary>
     /// The request table. Owns the item list the <see cref="MultiColumnListView"/> is bound to and
     /// everything about rows: columns, cell binding, selection that survives inserts and evictions,
-    /// DevTools-style auto-scroll, and the row context menu. The window feeds it records; it never
-    /// reads the store itself, so it works the same over a filtered view.
+    /// DevTools-style auto-scroll, header-click sorting, and the row context menu. The window feeds
+    /// it records; it never reads the store itself, so it works the same over a filtered view.
+    ///
+    /// Sorting uses the header's built-in machinery (<see cref="ColumnSortingMode.Custom"/>): Unity
+    /// owns the click handling and the arrow indicator and cycles ascending → descending → off; we
+    /// translate its sort description into a <see cref="SortColumn"/> and let the query do the work.
     /// </summary>
     internal sealed class RecordListView : VisualElement
     {
@@ -20,17 +24,22 @@ namespace HttpMonitor.Editor
         private readonly List<EditorRecord> _items = new List<EditorRecord>();
         private readonly MultiColumnListView _list;
         private readonly Button _jumpToLatest;
+        private readonly Dictionary<string, SortColumn> _sortByColumnName = new Dictionary<string, SortColumn>();
 
         private long _selectedId = -1;
         private bool _followLatest = true;
         private bool _userScrolled;
         private bool _autoScrollEnabled = true;
+        private bool _sorted;
 
         /// <summary>Fired when the selected record changes, with null when nothing is selected.</summary>
         public event Action<EditorRecord> SelectionChanged;
 
         /// <summary>Fired with a host name when the user picks "Filter by host" from the context menu.</summary>
         public event Action<string> FilterByHostRequested;
+
+        /// <summary>Fired when the user changes the header sort. <see cref="SortColumn.Arrival"/> means unsorted.</summary>
+        public event Action<SortColumn, bool> SortChanged;
 
         public RecordListView()
         {
@@ -44,12 +53,13 @@ namespace HttpMonitor.Editor
                 fixedItemHeight = RowHeight,
                 selectionType = SelectionType.Single,
                 showAlternatingRowBackgrounds = AlternatingRowBackground.ContentOnly,
-                sortingMode = ColumnSortingMode.None,
+                sortingMode = ColumnSortingMode.Custom,
                 reorderable = false,
                 itemsSource = _items,
             };
             _list.AddToClassList("hm-list");
             _list.selectionChanged += OnSelectionChanged;
+            _list.columnSortingChanged += OnColumnSortingChanged;
             _list.RegisterCallback<WheelEvent>(_ => OnUserScrolled(), TrickleDown.TrickleDown);
             _list.RegisterCallback<KeyDownEvent>(OnKeyDown);
             _list.RegisterCallback<ContextualMenuPopulateEvent>(PopulateContextMenu);
@@ -62,8 +72,8 @@ namespace HttpMonitor.Editor
             _jumpToLatest.style.display = DisplayStyle.None;
             Add(_jumpToLatest);
 
-            // The scroller only exists after the first layout pass.
-            _list.RegisterCallback<GeometryChangedEvent>(HookScroller);
+            // The scroller and the header cells only exist after the first layout pass.
+            _list.RegisterCallback<GeometryChangedEvent>(HookAfterLayout);
         }
 
         public EditorRecord SelectedRecord => _list.selectedIndex >= 0 && _list.selectedIndex < _items.Count ? _items[_list.selectedIndex] : null;
@@ -90,16 +100,17 @@ namespace HttpMonitor.Editor
             }
         }
 
-        /// <summary>Replaces the rows. Selection is kept by record id; the view scrolls to the end when following.</summary>
-        public void SetRecords(IReadOnlyList<EditorRecord> records)
+        /// <summary>Replaces the rows. Selection is kept by record id; the view scrolls to the end when following an unsorted list.</summary>
+        public void SetRecords(IReadOnlyList<EditorRecord> records, bool sorted = false)
         {
+            _sorted = sorted;
             _items.Clear();
             _items.AddRange(records);
             _list.RefreshItems();
 
             RestoreSelection();
 
-            if (_followLatest && _autoScrollEnabled)
+            if (_followLatest && _autoScrollEnabled && !sorted)
                 ScrollToLatest();
         }
 
@@ -110,6 +121,17 @@ namespace HttpMonitor.Editor
 
             if (index >= 0)
                 _list.RefreshItem(index);
+        }
+
+        public void Select(EditorRecord record)
+        {
+            var index = _items.IndexOf(record);
+
+            if (index < 0)
+                return;
+
+            _list.SetSelection(index);
+            _list.ScrollToItem(index);
         }
 
         public void ClearSelection()
@@ -124,26 +146,59 @@ namespace HttpMonitor.Editor
             _list.Focus();
         }
 
+        /// <summary>
+        /// The sort the header currently shows. Unity persists it with the view data, so after a
+        /// domain reload the header may already be sorted before the query knows.
+        /// </summary>
+        public void GetSort(out SortColumn column, out bool descending)
+        {
+            column = SortColumn.Arrival;
+            descending = false;
+
+            var descriptions = _list.sortColumnDescriptions;
+
+            if (descriptions == null || descriptions.Count == 0)
+                return;
+
+            // Only the primary sort is honoured; arrival order is always the tiebreaker.
+            var primary = descriptions[0];
+
+            if (_sortByColumnName.TryGetValue(primary.columnName ?? string.Empty, out var mapped))
+            {
+                column = mapped;
+                descending = primary.direction == SortDirection.Descending;
+            }
+        }
+
+        private void OnColumnSortingChanged()
+        {
+            GetSort(out var column, out var descending);
+            SortChanged?.Invoke(column, descending);
+        }
+
         // ---------------------------------------------------------------- columns
 
         private void AddColumns()
         {
             var columns = _list.columns;
 
-            columns.Add(Column("dot", string.Empty, 22, 22, 22, MakeDot, BindDot, stretch: false, resizable: false));
-            columns.Add(Column("method", "Method", 58, 44, 90, MakeLabel("hm-cell-method"), (e, r) => Set(e, r.Method), stretch: false));
-            columns.Add(Column("status", "Status", 56, 44, 90, MakeLabel("hm-cell-status"), BindStatus, stretch: false));
-            columns.Add(Column("name", "Name", 260, 80, 2000, MakeName, BindName, stretch: true));
-            columns.Add(Column("host", "Host", 150, 60, 600, MakeLabel("hm-cell"), (e, r) => Set(e, RecordFormat.Host(r.Url), r.Url), stretch: false));
-            columns.Add(Column("type", "Type", 70, 40, 160, MakeLabel("hm-cell"), BindType, stretch: false));
-            columns.Add(Column("size", "Size", 70, 44, 120, MakeLabel("hm-cell-right"), BindSize, stretch: false));
-            columns.Add(Column("time", "Time", 70, 44, 120, MakeLabel("hm-cell-right"), (e, r) => Set(e, RecordFormat.FormatDuration(r)), stretch: false));
-            columns.Add(Column("started", "Started", 90, 60, 140, MakeLabel("hm-cell"), (e, r) => Set(e, RecordFormat.FormatStarted(r), r.StartedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff")), stretch: false));
+            columns.Add(Column("dot", string.Empty, SortColumn.Status, 22, 22, 22, MakeDot, BindDot, stretch: false, resizable: false));
+            columns.Add(Column("method", "Method", SortColumn.Method, 58, 44, 90, MakeLabel("hm-cell-method"), (e, r) => Set(e, r.Method), stretch: false));
+            columns.Add(Column("status", "Status", SortColumn.Status, 56, 44, 90, MakeLabel("hm-cell-status"), BindStatus, stretch: false));
+            columns.Add(Column("source", "Src", SortColumn.Source, 44, 36, 60, MakeSource, BindSource, stretch: false));
+            columns.Add(Column("name", "Name", SortColumn.Name, 260, 80, 2000, MakeLabel("hm-cell"), BindName, stretch: true));
+            columns.Add(Column("host", "Host", SortColumn.Host, 150, 60, 600, MakeLabel("hm-cell"), (e, r) => Set(e, RecordFormat.Host(r.Url), r.Url), stretch: false));
+            columns.Add(Column("type", "Type", SortColumn.Type, 70, 40, 160, MakeLabel("hm-cell"), BindType, stretch: false));
+            columns.Add(Column("size", "Size", SortColumn.Size, 70, 44, 120, MakeLabel("hm-cell-right"), BindSize, stretch: false));
+            columns.Add(Column("time", "Time", SortColumn.Time, 70, 44, 120, MakeLabel("hm-cell-right"), (e, r) => Set(e, RecordFormat.FormatDuration(r)), stretch: false));
+            columns.Add(Column("started", "Started", SortColumn.Started, 90, 60, 140, MakeLabel("hm-cell"), (e, r) => Set(e, RecordFormat.FormatStarted(r), r.StartedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff")), stretch: false));
         }
 
-        private Column Column(string name, string title, float width, float min, float max,
+        private Column Column(string name, string title, SortColumn sort, float width, float min, float max,
             Func<VisualElement> make, Action<VisualElement, EditorRecord> bind, bool stretch, bool resizable = true)
         {
+            _sortByColumnName[name] = sort;
+
             return new Column
             {
                 name = name,
@@ -153,7 +208,7 @@ namespace HttpMonitor.Editor
                 maxWidth = max,
                 stretchable = stretch,
                 resizable = resizable,
-                sortable = false,
+                sortable = true,
                 makeCell = make,
                 bindCell = (element, index) =>
                 {
@@ -210,31 +265,30 @@ namespace HttpMonitor.Editor
             label.EnableInClassList("hm-cell-status--error", record.IsFinished && record.IsError);
         }
 
-        private static VisualElement MakeName()
+        private static VisualElement MakeSource()
         {
-            var row = new VisualElement();
-            row.AddToClassList("hm-cell");
-            row.AddToClassList("hm-cell-name");
+            var container = new VisualElement();
+            container.AddToClassList("hm-cell-source");
             var badge = new Label { name = "badge" };
             badge.AddToClassList("hm-source-badge");
-            var text = new Label { name = "text" };
-            text.AddToClassList("hm-cell-name-text");
-            row.Add(badge);
-            row.Add(text);
+            container.Add(badge);
 
-            return row;
+            return container;
+        }
+
+        private static void BindSource(VisualElement element, EditorRecord record)
+        {
+            var badge = element.Q<Label>("badge");
+            badge.text = RecordFormat.SourceBadge(record.Source);
+            badge.ClearClassList();
+            badge.AddToClassList("hm-source-badge");
+            badge.AddToClassList(RecordFormat.SourceClass(record.Source));
+            element.tooltip = "Captured: " + RecordFormat.SourceText(record.Source);
         }
 
         private static void BindName(VisualElement element, EditorRecord record)
         {
-            var badge = element.Q<Label>("badge");
-            badge.text = RecordFormat.SourceBadge(record.Source);
-            badge.tooltip = "Captured: " + RecordFormat.SourceText(record.Source);
-            badge.EnableInClassList("hm-source-badge--manual", (record.Source & HttpCaptureSource.Manual) != 0);
-
-            var text = element.Q<Label>("text");
-            text.text = RecordFormat.Name(record.Url);
-            element.tooltip = record.Url;
+            Set(element, RecordFormat.Name(record.Url), record.Url);
         }
 
         private static void BindType(VisualElement element, EditorRecord record)
@@ -286,14 +340,14 @@ namespace HttpMonitor.Editor
             }
         }
 
-        private void HookScroller(GeometryChangedEvent _)
+        private void HookAfterLayout(GeometryChangedEvent _)
         {
             var scroller = _list.Q<Scroller>();
 
             if (scroller == null)
                 return;
 
-            _list.UnregisterCallback<GeometryChangedEvent>(HookScroller);
+            _list.UnregisterCallback<GeometryChangedEvent>(HookAfterLayout);
             scroller.valueChanged += value =>
             {
                 if (_userScrolled)
@@ -325,7 +379,7 @@ namespace HttpMonitor.Editor
         private void Follow(bool follow)
         {
             _followLatest = follow;
-            _jumpToLatest.style.display = !follow && _autoScrollEnabled ? DisplayStyle.Flex : DisplayStyle.None;
+            _jumpToLatest.style.display = !follow && _autoScrollEnabled && !_sorted ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void ScrollToLatest()
