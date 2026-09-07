@@ -1,9 +1,11 @@
-/* HTTP Monitor window. Colours resolve against the active Editor theme; status colours are fixed
-   because they carry meaning (same hues as browser dev tools). */
+/* HTTP Monitor window. Layout colours resolve against the active Editor theme; status colours are
+   fixed because they carry meaning (same hues as browser dev tools). */
 
 .hm-root {
     flex-grow: 1;
 }
+
+/* ---------------------------------------------------------------- toolbar */
 
 .hm-toolbar {
     flex-shrink: 0;
@@ -27,6 +29,8 @@
     background-color: #8a8a8a;
 }
 
+/* ---------------------------------------------------------------- split */
+
 .hm-split {
     flex-grow: 1;
 }
@@ -37,42 +41,83 @@
     min-height: 80px;
 }
 
+.hm-record-list {
+    flex-grow: 1;
+}
+
 .hm-list {
     flex-grow: 1;
 }
 
-.hm-row {
-    flex-direction: row;
-    align-items: center;
-    padding-left: 6px;
-    padding-right: 6px;
-}
+/* ---------------------------------------------------------------- cells */
 
-.hm-row-method {
-    width: 48px;
-    -unity-font-style: bold;
-    flex-shrink: 0;
-}
-
-.hm-row-status {
-    width: 40px;
-    flex-shrink: 0;
-    -unity-text-align: middle-right;
-    margin-right: 8px;
-}
-
-.hm-row-url {
-    flex-grow: 1;
+.hm-cell {
+    padding-left: 4px;
+    padding-right: 4px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    -unity-text-align: middle-left;
+    height: 100%;
+}
+
+.hm-cell-method {
+    -unity-font-style: bold;
+}
+
+.hm-cell-status {
+    -unity-text-align: middle-right;
+}
+
+.hm-cell-status--error {
+    color: #f85149;
+}
+
+.hm-cell-right {
+    -unity-text-align: middle-right;
+}
+
+.hm-cell-dot {
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.hm-cell-name {
+    flex-direction: row;
+    align-items: center;
+}
+
+.hm-cell-name-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hm-source-badge {
+    flex-shrink: 0;
+    font-size: 9px;
+    padding: 0 3px;
+    margin-right: 5px;
+    border-radius: 3px;
+    border-width: 1px;
+    border-color: rgba(128, 128, 128, 0.6);
+    color: rgba(128, 128, 128, 0.9);
+    -unity-text-align: middle-center;
+    min-width: 14px;
+}
+
+.hm-source-badge--manual {
+    border-color: rgba(88, 166, 255, 0.8);
+    color: rgb(88, 166, 255);
 }
 
 .hm-status-dot {
     width: 8px;
     height: 8px;
     border-radius: 4px;
-    margin-right: 6px;
     flex-shrink: 0;
     background-color: #8a8a8a;
 }
@@ -89,6 +134,19 @@
 .hm-status-dot--5xx { background-color: #f85149; }
 .hm-status-dot--failed { background-color: #f85149; }
 .hm-status-dot--aborted { background-color: #8a8a8a; }
+
+/* ---------------------------------------------------------------- jump to latest */
+
+.hm-jump-latest {
+    position: absolute;
+    right: 20px;
+    bottom: 8px;
+    padding: 3px 10px;
+    border-radius: 10px;
+    opacity: 0.92;
+}
+
+/* ---------------------------------------------------------------- empty state */
 
 .hm-empty {
     position: absolute;
@@ -115,6 +173,8 @@
     max-width: 420px;
 }
 
+/* ---------------------------------------------------------------- detail */
+
 .hm-detail-pane {
     flex-grow: 1;
     min-width: 200px;
@@ -132,6 +192,8 @@
 .hm-detail-summary {
     white-space: normal;
 }
+
+/* ---------------------------------------------------------------- status bar */
 
 .hm-statusbar {
     flex-shrink: 0;
