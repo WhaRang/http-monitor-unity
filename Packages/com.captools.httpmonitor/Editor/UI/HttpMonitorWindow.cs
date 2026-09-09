@@ -28,8 +28,7 @@ namespace HttpMonitor.Editor
         private VisualElement _empty;
         private Label _emptyTitle;
         private Label _emptyText;
-        private Label _detailPlaceholder;
-        private Label _detailSummary;
+        private DetailPane _detail;
         private Label _statusText;
         private VisualElement _recordDot;
         private ToolbarToggle _recordToggle;
@@ -206,17 +205,10 @@ namespace HttpMonitor.Editor
             _empty.Add(_emptyText);
             listPane.Add(_empty);
 
-            var detailPane = new VisualElement { name = "hm-detail-pane" };
-            detailPane.AddToClassList("hm-detail-pane");
-            _detailPlaceholder = new Label("Select a request to see its headers and body.");
-            _detailPlaceholder.AddToClassList("hm-detail-placeholder");
-            _detailSummary = new Label { style = { display = DisplayStyle.None } };
-            _detailSummary.AddToClassList("hm-detail-summary");
-            detailPane.Add(_detailPlaceholder);
-            detailPane.Add(_detailSummary);
+            _detail = new DetailPane();
 
             _split.Add(listPane);
-            _split.Add(detailPane);
+            _split.Add(_detail);
 
             return _split;
         }
@@ -385,28 +377,7 @@ namespace HttpMonitor.Editor
 
         private void ShowSelection(EditorRecord record)
         {
-            _detailPlaceholder.style.display = record == null ? DisplayStyle.Flex : DisplayStyle.None;
-            _detailSummary.style.display = record == null ? DisplayStyle.None : DisplayStyle.Flex;
-
-            if (record == null)
-                return;
-
-            var status = RecordFormat.StatusText(record);
-            var reason = RecordFormat.ReasonPhrase(record.StatusCode);
-
-            var lines = new List<string>
-            {
-                $"{record.Method} {record.Url}",
-                $"{status}{(string.IsNullOrEmpty(reason) ? "" : " " + reason)}  ·  {record.State}  ·  {RecordFormat.ClientText(record.Client)}  ·  {RecordFormat.SourceText(record.Source)}",
-                $"Started {RecordFormat.FormatStarted(record)}  ·  {RecordFormat.FormatDuration(record)}  ·  ↑ {RecordFormat.FormatBytes(record.UploadedBytes)}  ↓ {RecordFormat.FormatBytes(record.DownloadedBytes)}",
-            };
-
-            if (!string.IsNullOrEmpty(record.Error))
-                lines.Add("Error: " + record.Error);
-
-            lines.Add($"{record.RequestHeaders.Length} request header(s), {record.ResponseHeaders.Length} response header(s). Full detail view arrives in M2 step 5.");
-
-            _detailSummary.text = string.Join("\n", lines);
+            _detail.Show(record);
         }
 
         private void OnKeyDown(KeyDownEvent e)
