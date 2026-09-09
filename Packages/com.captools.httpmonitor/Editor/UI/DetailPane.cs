@@ -20,9 +20,13 @@ namespace HttpMonitor.Editor
         private readonly Label _error;
         private readonly Button _copyUrl;
         private readonly Button _copyCurl;
+        private readonly Button _maximize;
         private readonly ExchangeBlock _request;
         private readonly ExchangeBlock _response;
         private EditorRecord _record;
+
+        /// <summary>The user clicked the maximize / restore button.</summary>
+        public event Action MaximizeToggled;
 
         public DetailPane()
         {
@@ -60,6 +64,11 @@ namespace HttpMonitor.Editor
             _copyCurl = new Button(() => Copy(RecordFormat.ToCurl(_record, RedactedValue))) { text = "Copy as cURL", tooltip = "A curl command that reproduces this request. Redacted headers become shell variables." };
             _copyCurl.AddToClassList("hm-small-button");
             line1.Add(_copyCurl);
+            _maximize = new Button(() => MaximizeToggled?.Invoke());
+            _maximize.AddToClassList("hm-small-button");
+            _maximize.AddToClassList("hm-maximize");
+            line1.Add(_maximize);
+            SetMaximized(false);
             summary.Add(line1);
 
             var line2 = new VisualElement();
@@ -87,6 +96,14 @@ namespace HttpMonitor.Editor
         }
 
         private static string RedactedValue => HttpMonitorSession.Current.Options.RedactedValue;
+
+        public EditorRecord Record => _record;
+
+        public void SetMaximized(bool maximized)
+        {
+            _maximize.text = maximized ? "⤡ Restore" : "⤢ Maximize";
+            _maximize.tooltip = maximized ? "Back to the list and detail layout (Esc)" : "Give the detail the whole window; Up/Down still move the selection, Esc restores";
+        }
 
         public void Show(EditorRecord record)
         {

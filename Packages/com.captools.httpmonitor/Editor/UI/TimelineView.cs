@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -12,6 +13,10 @@ namespace HttpMonitor.Editor
     /// Packing walks the records by start time, so the picture does not depend on the order the
     /// records arrive in (the table may be sorted by any column). Hover shows a tooltip, click
     /// selects, selection highlights.
+    ///
+    /// Sizing: the user drags the top edge to choose the height (remembered), and the lane count
+    /// follows the height; extra concurrency lands in the last lane. A collapse button shrinks it to
+    /// a one-line summary so the list gets the room back without losing the axis.
     /// </summary>
     internal sealed class TimelineView : VisualElement
     {
@@ -19,12 +24,17 @@ namespace HttpMonitor.Editor
         private const float LaneGap = 3f;
         private const float MinBarWidth = 2f;
         private const float PaddingX = 8f;
-        private const float PaddingY = 8f;
+        private const float PaddingY = 6f;
         private const float AxisHeight = 16f;
-        private const int MinLanes = 4;
-        private const int MaxLanes = 12;
+        private const float HandleHeight = 5f;
+        private const float CollapsedHeight = 22f;
+        private const float MinExpandedHeight = 70f;
+        private const float MaxExpandedHeight = 420f;
+        private const float DefaultExpandedHeight = 110f;
         private const double MinWindowMs = 250;
         private const double PendingMinWidthMs = 20;
+        private const string HeightPrefKey = "HttpMonitor.Timeline.Height";
+        private const string CollapsedPrefKey = "HttpMonitor.Timeline.Collapsed";
 
         private struct Bar
         {
@@ -37,13 +47,20 @@ namespace HttpMonitor.Editor
 
         private readonly List<Bar> _bars = new List<Bar>();
         private readonly List<EditorRecord> _records = new List<EditorRecord>();
+        private readonly VisualElement _handle;
         private readonly Label _tooltipLabel;
         private readonly Label _axisLabel;
+        private readonly Button _collapseButton;
         private EditorRecord _selected;
         private EditorRecord _hovered;
         private long _originTicks;
         private double _windowMs = MinWindowMs;
         private int _laneCount = 1;
+        private float _expandedHeight;
+        private bool _collapsed;
+        private int _dragPointer = -1;
+        private float _dragStartY;
+        private float _dragStartHeight;
 
         public event Action<EditorRecord> BarClicked;
 
@@ -51,11 +68,24 @@ namespace HttpMonitor.Editor
         {
             name = "hm-timeline";
             AddToClassList("hm-timeline");
-            style.height = PreferredHeight(1);
+
+            _expandedHeight = Mathf.Clamp(EditorPrefs.GetFloat(HeightPrefKey, DefaultExpandedHeight), MinExpandedHeight, MaxExpandedHeight);
+            _collapsed = EditorPrefs.GetBool(CollapsedPrefKey, false);
+
+            _handle = new VisualElement { name = "hm-timeline-handle", tooltip = "Drag to resize the timeline" };
+            _handle.AddToClassList("hm-timeline-handle");
+            _handle.RegisterCallback<PointerDownEvent>(OnHandleDown);
+            _handle.RegisterCallback<PointerMoveEvent>(OnHandleMove);
+            _handle.RegisterCallback<PointerUpEvent>(OnHandleUp);
+            Add(_handle);
 
             _axisLabel = new Label { pickingMode = PickingMode.Ignore };
             _axisLabel.AddToClassList("hm-timeline-axis");
             Add(_axisLabel);
+
+            _collapseButton = new Button(() => Collapsed = !Collapsed);
+            _collapseButton.AddToClassList("hm-timeline-collapse");
+            Add(_collapseButton);
 
             _tooltipLabel = new Label { pickingMode = PickingMode.Ignore };
             _tooltipLabel.AddToClassList("hm-timeline-tooltip");
@@ -67,7 +97,30 @@ namespace HttpMonitor.Editor
             RegisterCallback<MouseLeaveEvent>(_ => SetHovered(null));
             RegisterCallback<ClickEvent>(OnClick);
             RegisterCallback<GeometryChangedEvent>(_ => Layout());
+
+            ApplyHeight();
         }
+
+        /// <summary>Collapsed: a one-line strip with the axis summary; the bars come back on expand.</summary>
+        public bool Collapsed
+        {
+            get => _collapsed;
+            set
+            {
+                if (_collapsed == value)
+                    return;
+
+                _collapsed = value;
+                EditorPrefs.SetBool(CollapsedPrefKey, value);
+                ApplyHeight();
+                Layout();
+            }
+        }
+
+        public float ExpandedHeight => _expandedHeight;
+
+        /// <summary>How many lanes fit the current expanded height; concurrency beyond that shares the last lane.</summary>
+        internal int AvailableLanes => Math.Max(1, (int)((_expandedHeight - PaddingY * 2 - AxisHeight) / (LaneHeight + LaneGap)));
 
         public void SetRecords(IReadOnlyList<EditorRecord> records)
         {
@@ -140,13 +193,67 @@ namespace HttpMonitor.Editor
             return ids;
         }
 
-        // ---------------------------------------------------------------- geometry
-
-        /// <summary>Never shorter than <see cref="MinLanes"/> lanes, so the strip has presence even with one request.</summary>
-        private static float PreferredHeight(int lanes)
+        internal void SetExpandedHeightForTests(float height)
         {
-            return PaddingY * 2 + AxisHeight + Math.Max(MinLanes, lanes) * (LaneHeight + LaneGap);
+            _expandedHeight = Mathf.Clamp(height, MinExpandedHeight, MaxExpandedHeight);
+            ApplyHeight();
+            Layout();
         }
+
+        // ---------------------------------------------------------------- sizing
+
+        private void ApplyHeight()
+        {
+            style.height = _collapsed ? CollapsedHeight : _expandedHeight;
+            _collapseButton.text = _collapsed ? "▴ Expand" : "▾ Collapse";
+            _collapseButton.tooltip = _collapsed ? "Show the bars again" : "Shrink the timeline to one line";
+            EnableInClassList("hm-timeline--collapsed", _collapsed);
+        }
+
+        private void OnHandleDown(PointerDownEvent e)
+        {
+            if (e.button != 0)
+                return;
+
+            _dragPointer = e.pointerId;
+            _dragStartY = e.position.y;
+            _dragStartHeight = _collapsed ? MinExpandedHeight : _expandedHeight;
+            _handle.CapturePointer(e.pointerId);
+            e.StopPropagation();
+        }
+
+        private void OnHandleMove(PointerMoveEvent e)
+        {
+            if (e.pointerId != _dragPointer)
+                return;
+
+            // The timeline sits at the bottom: dragging the top edge up makes it taller.
+            var height = Mathf.Clamp(_dragStartHeight - (e.position.y - _dragStartY), MinExpandedHeight, MaxExpandedHeight);
+
+            if (_collapsed)
+            {
+                _collapsed = false;
+                EditorPrefs.SetBool(CollapsedPrefKey, false);
+            }
+
+            _expandedHeight = height;
+            ApplyHeight();
+            Layout();
+            e.StopPropagation();
+        }
+
+        private void OnHandleUp(PointerUpEvent e)
+        {
+            if (e.pointerId != _dragPointer)
+                return;
+
+            _handle.ReleasePointer(e.pointerId);
+            _dragPointer = -1;
+            EditorPrefs.SetFloat(HeightPrefKey, _expandedHeight);
+            e.StopPropagation();
+        }
+
+        // ---------------------------------------------------------------- geometry
 
         private void Layout()
         {
@@ -155,8 +262,7 @@ namespace HttpMonitor.Editor
             if (_records.Count == 0)
             {
                 _laneCount = 1;
-                style.height = PreferredHeight(1);
-                _axisLabel.text = string.Empty;
+                _axisLabel.text = _collapsed ? "Timeline: no requests" : string.Empty;
                 MarkDirtyRepaint();
 
                 return;
@@ -169,7 +275,9 @@ namespace HttpMonitor.Editor
             foreach (var record in _records)
                 _originTicks = Math.Min(_originTicks, record.StartedAtUtcTicks);
 
+            var maxLanes = AvailableLanes;
             var laneEnds = new List<double>();
+            var overflow = false;
 
             foreach (var record in _records)
             {
@@ -192,14 +300,15 @@ namespace HttpMonitor.Editor
 
                 if (lane < 0)
                 {
-                    if (laneEnds.Count < MaxLanes)
+                    if (laneEnds.Count < maxLanes)
                     {
                         lane = laneEnds.Count;
                         laneEnds.Add(0);
                     }
                     else
                     {
-                        lane = MaxLanes - 1; // overflow lane: bars overlap, still hoverable
+                        lane = maxLanes - 1; // overflow lane: bars overlap, still hoverable
+                        overflow = true;
                     }
                 }
 
@@ -210,7 +319,6 @@ namespace HttpMonitor.Editor
 
             _laneCount = Math.Max(1, laneEnds.Count);
             _windowMs = Math.Max(MinWindowMs, latestMs);
-            style.height = PreferredHeight(_laneCount);
 
             var width = Math.Max(0, resolvedStyle.width - PaddingX * 2);
             var scale = width > 0 ? width / _windowMs : 0;
@@ -220,12 +328,15 @@ namespace HttpMonitor.Editor
                 var bar = _bars[i];
                 var x = PaddingX + (float)(bar.StartMs * scale);
                 var w = Math.Max(MinBarWidth, (float)((bar.EndMs - bar.StartMs) * scale));
-                var y = PaddingY + bar.Lane * (LaneHeight + LaneGap);
+                var y = PaddingY + HandleHeight + bar.Lane * (LaneHeight + LaneGap);
                 bar.Rect = new Rect(x, y, w, LaneHeight);
                 _bars[i] = bar;
             }
 
-            _axisLabel.text = $"0 ms  →  {FormatAxis(_windowMs)}   ·   {_records.Count} request{(_records.Count == 1 ? "" : "s")}, {_laneCount} lane{(_laneCount == 1 ? "" : "s")}";
+            var summary = $"{_records.Count} request{(_records.Count == 1 ? "" : "s")} over {FormatAxis(_windowMs)}";
+            _axisLabel.text = _collapsed
+                ? "Timeline: " + summary
+                : $"0 ms  →  {FormatAxis(_windowMs)}   ·   {summary}, {_laneCount} lane{(_laneCount == 1 ? "" : "s")}{(overflow ? " (more concurrency than fits; drag the top edge to see it)" : "")}";
             MarkDirtyRepaint();
         }
 
@@ -238,11 +349,11 @@ namespace HttpMonitor.Editor
 
         private void Draw(MeshGenerationContext context)
         {
-            if (_bars.Count == 0)
+            if (_collapsed || _bars.Count == 0)
                 return;
 
             var painter = context.painter2D;
-            var axisY = PaddingY + Math.Max(MinLanes, _laneCount) * (LaneHeight + LaneGap) + 2;
+            var axisY = resolvedStyle.height - AxisHeight - 2;
 
             painter.strokeColor = new Color(0.5f, 0.5f, 0.5f, 0.4f);
             painter.lineWidth = 1;
@@ -309,6 +420,9 @@ namespace HttpMonitor.Editor
 
         private void OnMouseMove(MouseMoveEvent e)
         {
+            if (_collapsed)
+                return;
+
             var hit = HitTest(e.localMousePosition);
             SetHovered(hit);
 
@@ -323,6 +437,9 @@ namespace HttpMonitor.Editor
 
         private void OnClick(ClickEvent e)
         {
+            if (_collapsed)
+                return;
+
             var hit = HitTest(e.localPosition);
 
             if (hit != null)

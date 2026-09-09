@@ -10,9 +10,13 @@ using UnityEngine.UIElements;
 namespace HttpMonitor.Editor
 {
     /// <summary>
-    /// The traffic window: toolbar, filter bar, optional timeline, request table, detail pane,
-    /// status bar. Reads the Editor store only; all capture happens in the runtime and reaches the
-    /// store through the session bridge.
+    /// The traffic window: toolbar, filter bar, request table and detail pane in a split view,
+    /// optional timeline, status bar. Reads the Editor store only; all capture happens in the
+    /// runtime and reaches the store through the session bridge.
+    ///
+    /// Room to read: the split ratio is remembered per orientation, the timeline is resizable and
+    /// collapsible, and the detail pane can be maximized (the list shrinks to a one-row strip that
+    /// still answers Up/Down; Esc restores).
     /// </summary>
     public sealed class HttpMonitorWindow : EditorWindow
     {
@@ -21,10 +25,14 @@ namespace HttpMonitor.Editor
         private const string LayoutPrefKey = "HttpMonitor.Window.ListOnLeft";
         private const string AutoScrollPrefKey = "HttpMonitor.Window.AutoScroll";
         private const string TimelinePrefKey = "HttpMonitor.Window.Timeline";
+        private const string SplitVerticalPrefKey = "HttpMonitor.Window.Split.Vertical";
+        private const string SplitHorizontalPrefKey = "HttpMonitor.Window.Split.Horizontal";
+        private const float DefaultSplit = 280f;
 
         private readonly RecordQuery _query = new RecordQuery();
 
         private TwoPaneSplitView _split;
+        private VisualElement _listPane;
         private FilterBar _filterBar;
         private TimelineView _timeline;
         private RecordListView _list;
@@ -32,6 +40,13 @@ namespace HttpMonitor.Editor
         private Label _emptyTitle;
         private Label _emptyText;
         private DetailPane _detail;
+        private VisualElement _maximized;
+        private VisualElement _compactStrip;
+        private VisualElement _compactDot;
+        private Label _compactMethod;
+        private Label _compactStatus;
+        private Label _compactName;
+        private DetailPane _maximizedDetail;
         private Label _statusText;
         private VisualElement _recordDot;
         private ToolbarToggle _recordToggle;
@@ -39,6 +54,7 @@ namespace HttpMonitor.Editor
         private ToolbarToggle _timelineToggle;
         private ToolbarButton _layoutButton;
         private bool _refreshScheduled;
+        private bool _isMaximized;
         private List<EditorRecord> _visible = new List<EditorRecord>();
 
         [MenuItem(MenuPath)]
@@ -65,6 +81,16 @@ namespace HttpMonitor.Editor
         {
             get => EditorPrefs.GetBool(TimelinePrefKey, false);
             set => EditorPrefs.SetBool(TimelinePrefKey, value);
+        }
+
+        private static float SavedSplit(bool listOnLeft)
+        {
+            return EditorPrefs.GetFloat(listOnLeft ? SplitHorizontalPrefKey : SplitVerticalPrefKey, DefaultSplit);
+        }
+
+        private static void SaveSplit(bool listOnLeft, float value)
+        {
+            EditorPrefs.SetFloat(listOnLeft ? SplitHorizontalPrefKey : SplitVerticalPrefKey, value);
         }
 
         private void OnEnable()
@@ -96,10 +122,14 @@ namespace HttpMonitor.Editor
             root.Add(_filterBar);
 
             root.Add(BuildSplit());
+            root.Add(BuildMaximized());
             root.Add(BuildTimeline());
             root.Add(BuildStatusBar());
 
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+
+            if (!EditorPrefs.HasKey(LayoutPrefKey))
+                root.RegisterCallback<GeometryChangedEvent>(DecideDefaultLayout);
 
             Unsubscribe();
             Store.Buffer.Changed += ScheduleRefresh;
@@ -183,60 +213,15 @@ namespace HttpMonitor.Editor
             return toolbar;
         }
 
-        // ---------------------------------------------------------------- HAR
-
-        private void ExportHar(IReadOnlyList<EditorRecord> records, string what)
-        {
-            var name = $"http-monitor-{DateTime.Now:yyyyMMdd-HHmmss}.har";
-            var path = EditorUtility.SaveFilePanel("Export HAR", string.Empty, name, "har");
-
-            if (string.IsNullOrEmpty(path))
-                return;
-
-            try
-            {
-                File.WriteAllText(path, HarWriter.Write(records, PackageVersion()), new UTF8Encoding(false));
-                ShowNotification(new GUIContent($"Exported {records.Count} {what} request{(records.Count == 1 ? "" : "s")}"));
-            }
-            catch (Exception e)
-            {
-                EditorUtility.DisplayDialog("Export failed", e.Message, "OK");
-            }
-        }
-
-        private void ImportHar()
-        {
-            var path = EditorUtility.OpenFilePanel("Import HAR", string.Empty, "har");
-
-            if (string.IsNullOrEmpty(path))
-                return;
-
-            try
-            {
-                var records = HarReader.Read(File.ReadAllText(path));
-                Store.Buffer.AddImported(records);
-                ShowNotification(new GUIContent($"Imported {records.Count} request{(records.Count == 1 ? "" : "s")}"));
-            }
-            catch (Exception e)
-            {
-                EditorUtility.DisplayDialog("Import failed", e.Message, "OK");
-            }
-        }
-
-        private static string PackageVersion()
-        {
-            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(HttpMonitorWindow).Assembly);
-
-            return info != null ? info.version : "0.0.0";
-        }
-
         private VisualElement BuildSplit()
         {
-            _split = new TwoPaneSplitView(0, 280, ListOnLeft ? TwoPaneSplitViewOrientation.Horizontal : TwoPaneSplitViewOrientation.Vertical);
+            var listOnLeft = ListOnLeft;
+            _split = new TwoPaneSplitView(0, SavedSplit(listOnLeft), listOnLeft ? TwoPaneSplitViewOrientation.Horizontal : TwoPaneSplitViewOrientation.Vertical);
             _split.AddToClassList("hm-split");
 
-            var listPane = new VisualElement { name = "hm-list-pane" };
-            listPane.AddToClassList("hm-list-pane");
+            _listPane = new VisualElement { name = "hm-list-pane" };
+            _listPane.AddToClassList("hm-list-pane");
+            _listPane.RegisterCallback<GeometryChangedEvent>(OnListPaneResized);
 
             _list = new RecordListView { AutoScrollEnabled = AutoScroll };
             _list.SelectionChanged += OnSelectionChanged;
@@ -252,7 +237,7 @@ namespace HttpMonitor.Editor
                 _filterBar.SyncFromQuery();
                 OnQueryChanged();
             };
-            listPane.Add(_list);
+            _listPane.Add(_list);
 
             _empty = new VisualElement { name = "hm-empty", pickingMode = PickingMode.Ignore };
             _empty.AddToClassList("hm-empty");
@@ -262,14 +247,56 @@ namespace HttpMonitor.Editor
             _emptyText.AddToClassList("hm-empty-text");
             _empty.Add(_emptyTitle);
             _empty.Add(_emptyText);
-            listPane.Add(_empty);
+            _listPane.Add(_empty);
 
             _detail = new DetailPane();
+            _detail.MaximizeToggled += () => SetMaximized(!_isMaximized);
 
-            _split.Add(listPane);
+            _split.Add(_listPane);
             _split.Add(_detail);
 
             return _split;
+        }
+
+        /// <summary>The maximized layout: a one-row strip for the selection above a second detail pane. Hidden until used.</summary>
+        private VisualElement BuildMaximized()
+        {
+            _maximized = new VisualElement { name = "hm-maximized" };
+            _maximized.AddToClassList("hm-maximized");
+            _maximized.style.display = DisplayStyle.None;
+
+            _compactStrip = new VisualElement { name = "hm-compact-strip", tooltip = "Click to restore the list (Esc)" };
+            _compactStrip.AddToClassList("hm-compact-strip");
+            _compactStrip.RegisterCallback<ClickEvent>(_ => SetMaximized(false));
+
+            _compactDot = new VisualElement();
+            _compactDot.AddToClassList("hm-status-dot");
+            _compactStrip.Add(_compactDot);
+
+            _compactMethod = new Label();
+            _compactMethod.AddToClassList("hm-compact-method");
+            _compactStrip.Add(_compactMethod);
+
+            _compactStatus = new Label();
+            _compactStatus.AddToClassList("hm-compact-status");
+            _compactStrip.Add(_compactStatus);
+
+            _compactName = new Label();
+            _compactName.AddToClassList("hm-compact-name");
+            _compactStrip.Add(_compactName);
+
+            var hint = new Label("↑ ↓ move selection   ·   Esc restore");
+            hint.AddToClassList("hm-compact-hint");
+            _compactStrip.Add(hint);
+
+            _maximized.Add(_compactStrip);
+
+            _maximizedDetail = new DetailPane();
+            _maximizedDetail.SetMaximized(true);
+            _maximizedDetail.MaximizeToggled += () => SetMaximized(false);
+            _maximized.Add(_maximizedDetail);
+
+            return _maximized;
         }
 
         /// <summary>The timeline sits under the split, full width, whatever the layout orientation.</summary>
@@ -291,6 +318,96 @@ namespace HttpMonitor.Editor
             bar.Add(_statusText);
 
             return bar;
+        }
+
+        // ---------------------------------------------------------------- layout
+
+        /// <summary>First open only: wide windows start side by side, tall ones stacked.</summary>
+        private void DecideDefaultLayout(GeometryChangedEvent e)
+        {
+            var size = e.newRect.size;
+
+            if (size.x <= 0 || size.y <= 0)
+                return;
+
+            rootVisualElement.UnregisterCallback<GeometryChangedEvent>(DecideDefaultLayout);
+
+            var wide = size.x > size.y;
+
+            if (wide != ListOnLeft)
+                ToggleLayout();
+            else
+                ListOnLeft = wide; // write the key so the decision is made once
+        }
+
+        private void OnListPaneResized(GeometryChangedEvent e)
+        {
+            if (_isMaximized)
+                return;
+
+            var listOnLeft = ListOnLeft;
+            var value = listOnLeft ? e.newRect.width : e.newRect.height;
+
+            if (value > 0 && Mathf.Abs(SavedSplit(listOnLeft) - value) > 1f)
+                SaveSplit(listOnLeft, value);
+        }
+
+        private void ToggleLayout()
+        {
+            var listOnLeft = !ListOnLeft;
+            ListOnLeft = listOnLeft;
+            _split.fixedPaneInitialDimension = SavedSplit(listOnLeft);
+            _split.orientation = listOnLeft ? TwoPaneSplitViewOrientation.Horizontal : TwoPaneSplitViewOrientation.Vertical;
+            UpdateLayoutButton();
+        }
+
+        private void UpdateLayoutButton()
+        {
+            _layoutButton.text = ListOnLeft ? "Layout: side by side" : "Layout: stacked";
+        }
+
+        private void SetMaximized(bool maximized)
+        {
+            if (_isMaximized == maximized)
+                return;
+
+            _isMaximized = maximized;
+            _split.style.display = maximized ? DisplayStyle.None : DisplayStyle.Flex;
+            _filterBar.style.display = maximized ? DisplayStyle.None : DisplayStyle.Flex;
+            _maximized.style.display = maximized ? DisplayStyle.Flex : DisplayStyle.None;
+            _detail.SetMaximized(maximized);
+            UpdateTimelineVisibility();
+            ShowSelection(_list.SelectedRecord);
+
+            if (!maximized)
+                _list.FocusList();
+        }
+
+        private void UpdateCompactStrip(EditorRecord record)
+        {
+            _compactDot.ClearClassList();
+            _compactDot.AddToClassList("hm-status-dot");
+
+            if (record == null)
+            {
+                _compactMethod.text = string.Empty;
+                _compactStatus.text = string.Empty;
+                _compactName.text = "No request selected";
+
+                return;
+            }
+
+            _compactDot.AddToClassList(RecordFormat.StatusClass(record));
+            _compactMethod.text = record.Method;
+            _compactStatus.text = RecordFormat.StatusText(record);
+            _compactStatus.EnableInClassList("hm-cell-status--error", record.IsFinished && record.IsError);
+            _compactName.text = RecordFormat.Name(record.Url);
+            _compactName.tooltip = record.Url;
+        }
+
+        private void UpdateTimelineVisibility()
+        {
+            _timeline.style.display = ShowTimeline && !_isMaximized ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         // ---------------------------------------------------------------- state
@@ -436,33 +553,98 @@ namespace HttpMonitor.Editor
 
         private void ShowSelection(EditorRecord record)
         {
-            _detail.Show(record);
+            if (_isMaximized)
+            {
+                _maximizedDetail.Show(record);
+                UpdateCompactStrip(record);
+            }
+            else
+            {
+                _detail.Show(record);
+            }
         }
 
         private void OnKeyDown(KeyDownEvent e)
         {
             if (e.keyCode == KeyCode.F && e.actionKey)
             {
+                if (_isMaximized)
+                    SetMaximized(false);
+
                 _filterBar.FocusSearch();
                 e.StopPropagation();
+
+                return;
+            }
+
+            if (!_isMaximized)
+                return;
+
+            switch (e.keyCode)
+            {
+                case KeyCode.Escape:
+                    SetMaximized(false);
+                    e.StopPropagation();
+
+                    break;
+                case KeyCode.UpArrow:
+                    _list.SelectRelative(-1);
+                    e.StopPropagation();
+
+                    break;
+                case KeyCode.DownArrow:
+                    _list.SelectRelative(1);
+                    e.StopPropagation();
+
+                    break;
             }
         }
 
-        private void UpdateTimelineVisibility()
+        // ---------------------------------------------------------------- HAR
+
+        private void ExportHar(IReadOnlyList<EditorRecord> records, string what)
         {
-            _timeline.style.display = ShowTimeline ? DisplayStyle.Flex : DisplayStyle.None;
+            var name = $"http-monitor-{DateTime.Now:yyyyMMdd-HHmmss}.har";
+            var path = EditorUtility.SaveFilePanel("Export HAR", string.Empty, name, "har");
+
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                File.WriteAllText(path, HarWriter.Write(records, PackageVersion()), new UTF8Encoding(false));
+                ShowNotification(new GUIContent($"Exported {records.Count} {what} request{(records.Count == 1 ? "" : "s")}"));
+            }
+            catch (Exception e)
+            {
+                EditorUtility.DisplayDialog("Export failed", e.Message, "OK");
+            }
         }
 
-        private void ToggleLayout()
+        private void ImportHar()
         {
-            ListOnLeft = !ListOnLeft;
-            _split.orientation = ListOnLeft ? TwoPaneSplitViewOrientation.Horizontal : TwoPaneSplitViewOrientation.Vertical;
-            UpdateLayoutButton();
+            var path = EditorUtility.OpenFilePanel("Import HAR", string.Empty, "har");
+
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                var records = HarReader.Read(File.ReadAllText(path));
+                Store.Buffer.AddImported(records);
+                ShowNotification(new GUIContent($"Imported {records.Count} request{(records.Count == 1 ? "" : "s")}"));
+            }
+            catch (Exception e)
+            {
+                EditorUtility.DisplayDialog("Import failed", e.Message, "OK");
+            }
         }
 
-        private void UpdateLayoutButton()
+        private static string PackageVersion()
         {
-            _layoutButton.text = ListOnLeft ? "Layout: side by side" : "Layout: stacked";
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(HttpMonitorWindow).Assembly);
+
+            return info != null ? info.version : "0.0.0";
         }
 
         private static Texture2D LoadIcon()

@@ -140,6 +140,17 @@ namespace HttpMonitor.Editor
             _list.ClearSelection();
         }
 
+        /// <summary>Moves the selection by <paramref name="delta"/> rows; with nothing selected, starts from the newest.</summary>
+        public void SelectRelative(int delta)
+        {
+            if (_items.Count == 0)
+                return;
+
+            var index = _list.selectedIndex < 0 ? _items.Count - 1 : Mathf.Clamp(_list.selectedIndex + delta, 0, _items.Count - 1);
+            _list.SetSelection(index);
+            _list.ScrollToItem(index);
+        }
+
         /// <summary>Keyboard focus to the table itself (Focus() on this element is sealed by UI Toolkit).</summary>
         public void FocusList()
         {

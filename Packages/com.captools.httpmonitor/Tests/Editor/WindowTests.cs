@@ -32,6 +32,9 @@ namespace HttpMonitor.Tests.Editor
                 Assert.NotNull(root.Q("hm-filterbar"), "filter bar");
                 Assert.NotNull(root.Q("hm-search"), "search field");
                 Assert.NotNull(root.Q("hm-timeline"), "timeline");
+                Assert.NotNull(root.Q("hm-timeline-handle"), "timeline resize handle");
+                Assert.NotNull(root.Q("hm-maximized"), "maximized layout container");
+                Assert.AreEqual(DisplayStyle.None, root.Q("hm-maximized").style.display.value, "maximized layout starts hidden");
 
                 var list = root.Q<MultiColumnListView>("hm-list");
                 var columns = list.columns;
@@ -121,6 +124,28 @@ namespace HttpMonitor.Tests.Editor
             list.sortColumnDescriptions.Clear();
             view.GetSort(out column, out _);
             Assert.AreEqual(SortColumn.Arrival, column, "no description means arrival order");
+        }
+
+        [Test]
+        public void SelectRelative_MovesWithinBounds_AndStartsFromTheNewest()
+        {
+            var view = new RecordListView();
+            var a = Record(1);
+            var b = Record(2);
+            var c = Record(3);
+            view.SetRecords(new[] { a, b, c });
+
+            view.SelectRelative(-1);
+            Assert.AreSame(c, view.SelectedRecord, "nothing selected: start from the newest");
+
+            view.SelectRelative(-1);
+            Assert.AreSame(b, view.SelectedRecord);
+
+            view.SelectRelative(-5);
+            Assert.AreSame(a, view.SelectedRecord, "clamped at the top");
+
+            view.SelectRelative(9);
+            Assert.AreSame(c, view.SelectedRecord, "clamped at the bottom");
         }
 
         [Test]

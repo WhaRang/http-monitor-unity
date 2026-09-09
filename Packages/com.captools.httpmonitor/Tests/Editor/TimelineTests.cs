@@ -71,6 +71,42 @@ namespace HttpMonitor.Tests.Editor
         }
 
         [Test]
+        public void LaneCount_FollowsTheHeight_AndOverflowSharesTheLastLane()
+        {
+            // Four requests all overlapping: four lanes when there is room, else the extras pile into the last lane.
+            var records = new[] { R(1, 0, 100), R(2, 10, 100), R(3, 20, 100), R(4, 30, 100) };
+
+            var tall = new TimelineView();
+            tall.SetExpandedHeightForTests(400);
+            tall.SetRecords(records);
+            Assert.GreaterOrEqual(tall.AvailableLanes, 4);
+            Assert.AreEqual(new[] { 0, 1, 2, 3 }, tall.Lanes());
+
+            var short_ = new TimelineView();
+            short_.SetExpandedHeightForTests(70);
+            short_.SetRecords(records);
+            var lanes = short_.AvailableLanes;
+            Assert.Less(lanes, 4);
+            Assert.AreEqual(lanes, short_.LaneCount);
+            Assert.AreEqual(lanes - 1, short_.LaneOf(records[3]), "the overflow lands in the last lane");
+        }
+
+        [Test]
+        public void Collapsed_KeepsTheRecords_AndRestoresOnExpand()
+        {
+            var view = new TimelineView();
+            view.SetRecords(new[] { R(1, 0, 10), R(2, 5, 10) });
+            var before = view.Lanes();
+
+            view.Collapsed = true;
+            Assert.IsTrue(view.Collapsed);
+            Assert.AreEqual(before, view.Lanes(), "geometry is still computed while collapsed");
+
+            view.Collapsed = false;
+            Assert.AreEqual(before, view.Lanes());
+        }
+
+        [Test]
         public void Query_Filter_KeepsArrivalOrder_WhileApply_Sorts()
         {
             var records = new[] { R(1, 0, 30), R(2, 10, 10), R(3, 20, 20) };
