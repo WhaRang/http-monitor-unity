@@ -83,6 +83,25 @@ namespace HttpMonitor.Editor
             return record;
         }
 
+        /// <summary>Adds records that did not come from the runtime (a HAR import). They get fresh ids and fire one Changed at the end.</summary>
+        public void AddImported(IReadOnlyList<EditorRecord> records)
+        {
+            EnsureBodyBytes();
+
+            foreach (var record in records)
+            {
+                record.Id = _nextId++;
+                record.Imported = true;
+                record.Runtime = null;
+                _records.Add(record);
+                _storedBodyBytes += record.StoredBodyBytes;
+                EvictToLimits(record);
+                RecordAdded?.Invoke(record);
+            }
+
+            Changed?.Invoke();
+        }
+
         /// <summary>Refreshes the copy of a runtime record; null when it was evicted or never added.</summary>
         public EditorRecord Update(HttpRecord runtime)
         {

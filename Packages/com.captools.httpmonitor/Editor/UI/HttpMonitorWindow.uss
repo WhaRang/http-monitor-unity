@@ -138,6 +138,13 @@
     color: rgba(128, 128, 128, 0.9);
 }
 
+.hm-source-badge--imported {
+    background-color: rgba(227, 160, 8, 0.15);
+    border-color: rgb(227, 160, 8);
+    color: rgb(227, 160, 8);
+    font-size: 8px;
+}
+
 .hm-light .hm-source-badge--automatic { color: rgb(26, 127, 55); border-color: rgb(26, 127, 55); }
 .hm-light .hm-source-badge--manual { color: rgb(9, 105, 218); border-color: rgb(9, 105, 218); }
 .hm-light .hm-source-badge--both { color: rgb(130, 80, 223); border-color: rgb(130, 80, 223); }

@@ -116,7 +116,7 @@ namespace HttpMonitor.Editor
             _meta.text = string.Join("  ·  ", new[]
             {
                 RecordFormat.ClientText(record.Client),
-                RecordFormat.SourceText(record.Source),
+                RecordFormat.SourceText(record),
                 "started " + RecordFormat.FormatStarted(record),
                 RecordFormat.FormatDuration(record),
                 "↑ " + RecordFormat.FormatBytes(record.UploadedBytes) + "  ↓ " + RecordFormat.FormatBytes(record.DownloadedBytes),

@@ -279,11 +279,11 @@ namespace HttpMonitor.Editor
         private static void BindSource(VisualElement element, EditorRecord record)
         {
             var badge = element.Q<Label>("badge");
-            badge.text = RecordFormat.SourceBadge(record.Source);
+            badge.text = RecordFormat.SourceBadge(record);
             badge.ClearClassList();
             badge.AddToClassList("hm-source-badge");
-            badge.AddToClassList(RecordFormat.SourceClass(record.Source));
-            element.tooltip = "Captured: " + RecordFormat.SourceText(record.Source);
+            badge.AddToClassList(RecordFormat.SourceClass(record));
+            element.tooltip = "Captured: " + RecordFormat.SourceText(record);
         }
 
         private static void BindName(VisualElement element, EditorRecord record)

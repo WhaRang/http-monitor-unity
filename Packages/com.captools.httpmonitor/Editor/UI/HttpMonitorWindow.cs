@@ -1,4 +1,7 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -164,11 +167,67 @@ namespace HttpMonitor.Editor
             spacer.AddToClassList("hm-toolbar-spacer");
             toolbar.Add(spacer);
 
+            var export = new ToolbarMenu { text = "HAR", tooltip = "Export the captured requests as a HAR 1.2 file (opens in Chrome, Firefox, Charles, Proxyman), or import one" };
+            export.menu.AppendAction("Export all…", _ => ExportHar(Store.Buffer.Records, "all"), _ => Store.Buffer.Count > 0 ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+            export.menu.AppendAction("Export shown…", _ => ExportHar(_visible, "shown"), _ => _query.IsFiltering && _visible.Count > 0 ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+            export.menu.AppendSeparator();
+            export.menu.AppendAction("Import…", _ => ImportHar());
+            toolbar.Add(export);
+
             _layoutButton = new ToolbarButton(ToggleLayout) { tooltip = "Switch between list-above and list-left layouts" };
             UpdateLayoutButton();
             toolbar.Add(_layoutButton);
 
+            toolbar.Add(new ToolbarButton(OptionsWindow.Open) { text = "⚙", tooltip = "Capture options: body caps, redacted headers, records kept" });
+
             return toolbar;
+        }
+
+        // ---------------------------------------------------------------- HAR
+
+        private void ExportHar(IReadOnlyList<EditorRecord> records, string what)
+        {
+            var name = $"http-monitor-{DateTime.Now:yyyyMMdd-HHmmss}.har";
+            var path = EditorUtility.SaveFilePanel("Export HAR", string.Empty, name, "har");
+
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                File.WriteAllText(path, HarWriter.Write(records, PackageVersion()), new UTF8Encoding(false));
+                ShowNotification(new GUIContent($"Exported {records.Count} {what} request{(records.Count == 1 ? "" : "s")}"));
+            }
+            catch (Exception e)
+            {
+                EditorUtility.DisplayDialog("Export failed", e.Message, "OK");
+            }
+        }
+
+        private void ImportHar()
+        {
+            var path = EditorUtility.OpenFilePanel("Import HAR", string.Empty, "har");
+
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                var records = HarReader.Read(File.ReadAllText(path));
+                Store.Buffer.AddImported(records);
+                ShowNotification(new GUIContent($"Imported {records.Count} request{(records.Count == 1 ? "" : "s")}"));
+            }
+            catch (Exception e)
+            {
+                EditorUtility.DisplayDialog("Import failed", e.Message, "OK");
+            }
+        }
+
+        private static string PackageVersion()
+        {
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(HttpMonitorWindow).Assembly);
+
+            return info != null ? info.version : "0.0.0";
         }
 
         private VisualElement BuildSplit()

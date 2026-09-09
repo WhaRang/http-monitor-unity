@@ -106,7 +106,8 @@ namespace HttpMonitor.Editor
             var automatic = (record.Source & HttpCaptureSource.Woven) != 0;
             var manual = (record.Source & HttpCaptureSource.Manual) != 0;
 
-            if (!(automatic && ShowAutomatic) && !(manual && ShowManual))
+            // Imported records from other tools have no capture source; the source chips do not apply to them.
+            if (record.Source != HttpCaptureSource.None && !(automatic && ShowAutomatic) && !(manual && ShowManual))
                 return false;
 
             switch (record.Client)

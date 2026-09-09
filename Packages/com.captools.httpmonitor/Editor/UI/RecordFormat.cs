@@ -85,6 +85,24 @@ namespace HttpMonitor.Editor
             }
         }
 
+        /// <summary>Badge for a record: the capture source, or "HAR" for a record loaded from a file with no source of its own.</summary>
+        public static string SourceBadge(EditorRecord record)
+        {
+            return record.Imported && record.Source == HttpCaptureSource.None ? "HAR" : SourceBadge(record.Source);
+        }
+
+        public static string SourceClass(EditorRecord record)
+        {
+            return record.Imported && record.Source == HttpCaptureSource.None ? "hm-source-badge--imported" : SourceClass(record.Source);
+        }
+
+        public static string SourceText(EditorRecord record)
+        {
+            var text = record.Source == HttpCaptureSource.None ? "no capture source" : SourceText(record.Source);
+
+            return record.Imported ? text + ", imported from HAR" : text;
+        }
+
         public static string ClientText(HttpClientKind client)
         {
             switch (client)

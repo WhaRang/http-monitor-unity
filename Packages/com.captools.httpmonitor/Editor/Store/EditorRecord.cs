@@ -58,7 +58,10 @@ namespace HttpMonitor.Editor
 
         public int Revision;
 
-        /// <summary>The runtime record this was copied from; null after a domain reload.</summary>
+        /// <summary>True for records loaded from a HAR file rather than captured in this Editor.</summary>
+        public bool Imported;
+
+        /// <summary>The runtime record this was copied from; null after a domain reload or for imports.</summary>
         [NonSerialized] public HttpRecord Runtime;
 
         public DateTime StartedAtUtc => new DateTime(StartedAtUtcTicks, DateTimeKind.Utc);
