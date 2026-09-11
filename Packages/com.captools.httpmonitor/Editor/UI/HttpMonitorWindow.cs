@@ -57,10 +57,23 @@ namespace HttpMonitor.Editor
         private bool _isMaximized;
         private List<EditorRecord> _visible = new List<EditorRecord>();
 
+        /// <summary>The open main window, for popped-out detail windows that forward keyboard navigation.</summary>
+        internal static HttpMonitorWindow Instance { get; private set; }
+
+        /// <summary>The main window's selected record; popped-out follower windows track it.</summary>
+        internal static EditorRecord CurrentSelection { get; private set; }
+
+        internal static event Action<EditorRecord> SelectionChanged;
+
         [MenuItem(MenuPath)]
         public static void Open()
         {
             GetWindow<HttpMonitorWindow>();
+        }
+
+        internal void SelectRelativeFromOutside(int delta)
+        {
+            _list?.SelectRelative(delta);
         }
 
         private static EditorRecordStore Store => EditorRecordStore.instance;
@@ -97,11 +110,17 @@ namespace HttpMonitor.Editor
         {
             titleContent = new GUIContent("HTTP Monitor", LoadIcon());
             minSize = new Vector2(520, 260);
+            Instance = this;
+            DetailWindow.FollowerClosed += OnFollowerClosed;
         }
 
         private void OnDisable()
         {
             Unsubscribe();
+            DetailWindow.FollowerClosed -= OnFollowerClosed;
+
+            if (Instance == this)
+                Instance = null;
         }
 
         public void CreateGUI()
@@ -237,6 +256,7 @@ namespace HttpMonitor.Editor
                 _filterBar.SyncFromQuery();
                 OnQueryChanged();
             };
+            _list.PinRequested += record => DetailWindow.OpenPinned(record, position);
             _listPane.Add(_list);
 
             _empty = new VisualElement { name = "hm-empty", pickingMode = PickingMode.Ignore };
@@ -251,11 +271,46 @@ namespace HttpMonitor.Editor
 
             _detail = new DetailPane();
             _detail.MaximizeToggled += () => SetMaximized(!_isMaximized);
+            _detail.PopOutRequested += PopOut;
+            _detail.DockBackRequested += DockBack;
+            _detail.SetPoppedOut(DetailWindow.Follower != null); // a follower may have survived the domain reload
 
             _split.Add(_listPane);
             _split.Add(_detail);
 
             return _split;
+        }
+
+        // ---------------------------------------------------------------- pop-out
+
+        private void PopOut()
+        {
+            if (_isMaximized)
+                SetMaximized(false);
+
+            DetailWindow.OpenFollower(_list.SelectedRecord, position);
+            _detail.SetPoppedOut(true);
+        }
+
+        private void DockBack()
+        {
+            DetailWindow.CloseFollower();
+            _detail.SetPoppedOut(false);
+            Focus();
+        }
+
+        private void OnFollowerClosed()
+        {
+            // The user closed the popped-out window with its own X, or clicked Dock back there.
+            _detail?.SetPoppedOut(false);
+        }
+
+        private void PinCurrent()
+        {
+            var record = _list.SelectedRecord;
+
+            if (record != null)
+                DetailWindow.OpenPinned(record, position);
         }
 
         /// <summary>The maximized layout: a one-row strip for the selection above a second detail pane. Hidden until used.</summary>
@@ -460,6 +515,15 @@ namespace HttpMonitor.Editor
             ShowSelection(record);
         }
 
+        private static void PublishSelection(EditorRecord record)
+        {
+            if (ReferenceEquals(CurrentSelection, record))
+                return;
+
+            CurrentSelection = record;
+            SelectionChanged?.Invoke(record);
+        }
+
         private void Refresh()
         {
             if (_list == null)
@@ -553,6 +617,8 @@ namespace HttpMonitor.Editor
 
         private void ShowSelection(EditorRecord record)
         {
+            PublishSelection(record);
+
             if (_isMaximized)
             {
                 _maximizedDetail.Show(record);

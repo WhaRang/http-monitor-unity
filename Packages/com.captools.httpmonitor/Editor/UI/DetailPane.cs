@@ -21,12 +21,22 @@ namespace HttpMonitor.Editor
         private readonly Button _copyUrl;
         private readonly Button _copyCurl;
         private readonly Button _maximize;
+        private readonly Button _popOut;
+        private readonly VisualElement _poppedOutNotice;
+        private readonly Label _poppedOutSummary;
         private readonly ExchangeBlock _request;
         private readonly ExchangeBlock _response;
         private EditorRecord _record;
+        private bool _poppedOut;
 
         /// <summary>The user clicked the maximize / restore button.</summary>
         public event Action MaximizeToggled;
+
+        /// <summary>The user clicked "Pop out": the detail should move to its own window.</summary>
+        public event Action PopOutRequested;
+
+        /// <summary>The user clicked "Dock back" on the popped-out notice.</summary>
+        public event Action DockBackRequested;
 
         public DetailPane()
         {
@@ -68,6 +78,9 @@ namespace HttpMonitor.Editor
             _maximize.AddToClassList("hm-small-button");
             _maximize.AddToClassList("hm-maximize");
             line1.Add(_maximize);
+            _popOut = new Button(() => PopOutRequested?.Invoke()) { text = "⧉ Pop out", tooltip = "Move the detail into its own window. Pin it there to keep a request while you select others." };
+            _popOut.AddToClassList("hm-small-button");
+            line1.Add(_popOut);
             SetMaximized(false);
             summary.Add(line1);
 
@@ -93,7 +106,38 @@ namespace HttpMonitor.Editor
             _content.Add(_request);
             _response = new ExchangeBlock("Response", "HttpMonitor.Detail.ResponseBodyTab");
             _content.Add(_response);
+
+            // ---- popped-out notice (replaces everything while the detail lives in another window)
+            _poppedOutNotice = new VisualElement { name = "hm-popped-out" };
+            _poppedOutNotice.AddToClassList("hm-popped-out");
+            _poppedOutNotice.style.display = DisplayStyle.None;
+            var noticeTitle = new Label("Detail is open in a separate window");
+            noticeTitle.AddToClassList("hm-popped-out-title");
+            _poppedOutNotice.Add(noticeTitle);
+            _poppedOutSummary = new Label();
+            _poppedOutSummary.AddToClassList("hm-muted");
+            _poppedOutNotice.Add(_poppedOutSummary);
+            var dockBack = new Button(() => DockBackRequested?.Invoke()) { text = "Dock back", tooltip = "Close the separate window and show the detail here again" };
+            dockBack.AddToClassList("hm-popped-out-button");
+            _poppedOutNotice.Add(dockBack);
+            Add(_poppedOutNotice);
         }
+
+        /// <summary>Hides the maximize and pop-out buttons; used by the pane inside a popped-out window.</summary>
+        public void SetLayoutButtonsVisible(bool visible)
+        {
+            _maximize.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+            _popOut.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        /// <summary>While popped out, this pane shows only a notice and a summary of the selection.</summary>
+        public void SetPoppedOut(bool poppedOut)
+        {
+            _poppedOut = poppedOut;
+            Show(_record);
+        }
+
+        public bool IsPoppedOut => _poppedOut;
 
         private static string RedactedValue => HttpMonitorSession.Current.Options.RedactedValue;
 
@@ -108,6 +152,20 @@ namespace HttpMonitor.Editor
         public void Show(EditorRecord record)
         {
             _record = record;
+
+            if (_poppedOut)
+            {
+                _placeholder.style.display = DisplayStyle.None;
+                _content.style.display = DisplayStyle.None;
+                _poppedOutNotice.style.display = DisplayStyle.Flex;
+                _poppedOutSummary.text = record == null
+                    ? "No request selected."
+                    : $"Following the selection: {record.Method} {RecordFormat.StatusText(record)} {RecordFormat.Name(record.Url)}";
+
+                return;
+            }
+
+            _poppedOutNotice.style.display = DisplayStyle.None;
             _placeholder.style.display = record == null ? DisplayStyle.Flex : DisplayStyle.None;
             _content.style.display = record == null ? DisplayStyle.None : DisplayStyle.Flex;
 

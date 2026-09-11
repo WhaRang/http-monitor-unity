@@ -41,6 +41,9 @@ namespace HttpMonitor.Editor
         /// <summary>Fired when the user changes the header sort. <see cref="SortColumn.Arrival"/> means unsorted.</summary>
         public event Action<SortColumn, bool> SortChanged;
 
+        /// <summary>Fired when the user picks "Pin in a new window" from the context menu.</summary>
+        public event Action<EditorRecord> PinRequested;
+
         public RecordListView()
         {
             AddToClassList("hm-record-list");
@@ -408,6 +411,8 @@ namespace HttpMonitor.Editor
             if (record == null)
                 return;
 
+            e.menu.AppendAction("Pin in a new window", _ => PinRequested?.Invoke(record));
+            e.menu.AppendSeparator();
             e.menu.AppendAction("Copy URL", _ => Copy(record.Url));
             e.menu.AppendAction("Copy as cURL", _ => Copy(RecordFormat.ToCurl(record, HttpMonitorSession.Current.Options.RedactedValue)));
             e.menu.AppendAction("Copy response body", _ => Copy(BodyAsText(record.ResponseBody)),
