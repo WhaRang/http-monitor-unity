@@ -44,6 +44,9 @@ namespace HttpMonitor.Editor
         /// <summary>Fired when the user picks "Pin in a new window" from the context menu.</summary>
         public event Action<EditorRecord> PinRequested;
 
+        /// <summary>Fired on Enter: the user wants to work with the selected record's detail.</summary>
+        public event Action<EditorRecord> DetailRequested;
+
         public RecordListView()
         {
             AddToClassList("hm-record-list");
@@ -70,7 +73,7 @@ namespace HttpMonitor.Editor
             AddColumns();
             Add(_list);
 
-            _jumpToLatest = new Button(() => { Follow(true); ScrollToLatest(); }) { text = "↓ Jump to latest" };
+            _jumpToLatest = new Button(() => { Follow(true); ScrollToLatest(); }) { text = "↓ Jump to latest", tooltip = "Scroll to the newest request and follow again (End)" };
             _jumpToLatest.AddToClassList("hm-jump-latest");
             _jumpToLatest.style.display = DisplayStyle.None;
             Add(_jumpToLatest);
@@ -376,17 +379,49 @@ namespace HttpMonitor.Editor
             _userScrolled = true;
         }
 
+        /// <summary>
+        /// Keyboard, on top of what the list already does (Up/Down/Home/End/PageUp/PageDown move
+        /// the selection): Enter opens the detail, Delete or Backspace clears the selection,
+        /// Ctrl+C copies the URL, Ctrl+Shift+C copies the request as cURL.
+        /// </summary>
         private void OnKeyDown(KeyDownEvent e)
         {
-            if (e.keyCode == KeyCode.End)
+            var record = SelectedRecord;
+
+            switch (e.keyCode)
             {
-                Follow(true);
-                ScrollToLatest();
-                e.StopPropagation();
-            }
-            else if (e.keyCode == KeyCode.Home || e.keyCode == KeyCode.PageUp || e.keyCode == KeyCode.UpArrow)
-            {
-                _userScrolled = true;
+                case KeyCode.End:
+                    Follow(true);
+                    ScrollToLatest();
+                    e.StopPropagation();
+
+                    return;
+                case KeyCode.Home:
+                case KeyCode.PageUp:
+                case KeyCode.UpArrow:
+                    _userScrolled = true;
+
+                    return;
+                case KeyCode.Return:
+                case KeyCode.KeypadEnter:
+                    if (record != null)
+                        DetailRequested?.Invoke(record);
+
+                    e.StopPropagation();
+
+                    return;
+                case KeyCode.Delete:
+                case KeyCode.Backspace:
+                    ClearSelection();
+                    SelectionChanged?.Invoke(null);
+                    e.StopPropagation();
+
+                    return;
+                case KeyCode.C when e.actionKey && record != null:
+                    Copy(e.shiftKey ? RecordFormat.ToCurl(record, HttpMonitorSession.Current.Options.RedactedValue) : record.Url);
+                    e.StopPropagation();
+
+                    return;
             }
         }
 

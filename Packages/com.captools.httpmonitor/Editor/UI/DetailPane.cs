@@ -68,7 +68,7 @@ namespace HttpMonitor.Editor
             _url.AddToClassList("hm-summary-url");
             _url.selection.isSelectable = true;
             line1.Add(_url);
-            _copyUrl = new Button(() => Copy(_record?.Url)) { text = "Copy URL" };
+            _copyUrl = new Button(() => Copy(_record?.Url)) { text = "Copy URL", tooltip = "Copy the full URL (Ctrl+C in the list)" };
             _copyUrl.AddToClassList("hm-small-button");
             line1.Add(_copyUrl);
             _copyCurl = new Button(() => Copy(RecordFormat.ToCurl(_record, RedactedValue))) { text = "Copy as cURL", tooltip = "A curl command that reproduces this request. Redacted headers become shell variables." };

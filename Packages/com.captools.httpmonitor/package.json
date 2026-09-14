@@ -11,5 +11,12 @@
   "dependencies": {
     "com.unity.nuget.mono-cecil": "1.11.6",
     "com.unity.modules.unitywebrequest": "1.0.0"
-  }
+  },
+  "samples": [
+    {
+      "displayName": "Playground",
+      "description": "Buttons that exercise every capture path against a local server, so the window can be explored offline.",
+      "path": "Samples~/Playground"
+    }
+  ]
 }

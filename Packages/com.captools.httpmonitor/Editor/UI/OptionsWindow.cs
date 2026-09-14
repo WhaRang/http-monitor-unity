@@ -84,7 +84,7 @@ namespace HttpMonitor.Editor
             };
             root.Add(note);
 
-            var reset = new Button(ResetToDefaults) { text = "Reset to defaults", style = { marginTop = 8, alignSelf = Align.FlexStart } };
+            var reset = new Button(ResetToDefaults) { text = "Reset to defaults", tooltip = "Back to the shipped values: bodies on, 1 MB per body, 64 MB runtime and 16 MB editor budgets, the four standard redacted headers", style = { marginTop = 8, alignSelf = Align.FlexStart } };
             root.Add(reset);
         }
 

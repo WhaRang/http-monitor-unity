@@ -228,8 +228,26 @@ namespace HttpMonitor.Editor
             toolbar.Add(_layoutButton);
 
             toolbar.Add(new ToolbarButton(OptionsWindow.Open) { text = "⚙", tooltip = "Capture options: body caps, redacted headers, records kept" });
+            toolbar.Add(new ToolbarButton(ShowShortcuts) { text = "?", tooltip = "Keyboard shortcuts" });
 
             return toolbar;
+        }
+
+        private static void ShowShortcuts()
+        {
+            EditorUtility.DisplayDialog("HTTP Monitor shortcuts",
+                "Ctrl+Shift+H\topen this window\n" +
+                "Ctrl+F\t\tfocus the filter, Esc clears it\n" +
+                "Up / Down\tmove the selection (also while maximized or from a follower window)\n" +
+                "Home / End\tfirst / newest request; End resumes auto-scroll\n" +
+                "Enter\t\topen the detail (maximize, or focus the popped-out window)\n" +
+                "Esc\t\trestore from maximized\n" +
+                "Delete\t\tclear the selection\n" +
+                "Ctrl+C\t\tcopy the URL\n" +
+                "Ctrl+Shift+C\tcopy as cURL\n" +
+                "Click a header\tsort; again for descending; again for arrival order\n" +
+                "Right-click a row\tcopy, filter by host, pin, open in browser",
+                "Close");
         }
 
         private VisualElement BuildSplit()
@@ -257,6 +275,16 @@ namespace HttpMonitor.Editor
                 OnQueryChanged();
             };
             _list.PinRequested += record => DetailWindow.OpenPinned(record, position);
+            _list.DetailRequested += _ =>
+            {
+                // Enter: give the detail focus where it lives (popped out, maximized, or in the split).
+                var follower = DetailWindow.Follower;
+
+                if (follower != null)
+                    follower.Focus();
+                else if (!_isMaximized)
+                    SetMaximized(true);
+            };
             _listPane.Add(_list);
 
             _empty = new VisualElement { name = "hm-empty", pickingMode = PickingMode.Ignore };

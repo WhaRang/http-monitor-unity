@@ -1,6 +1,7 @@
 using HttpMonitor.Editor;
 using NUnit.Framework;
 using UnityEditor;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace HttpMonitor.Tests.Editor
@@ -124,6 +125,43 @@ namespace HttpMonitor.Tests.Editor
             list.sortColumnDescriptions.Clear();
             view.GetSort(out column, out _);
             Assert.AreEqual(SortColumn.Arrival, column, "no description means arrival order");
+        }
+
+        [Test]
+        public void Keyboard_Enter_RequestsDetail_Delete_ClearsSelection()
+        {
+            var view = new RecordListView();
+            var list = view.Q<MultiColumnListView>();
+            var b = Record(2);
+            EditorRecord detailFor = null;
+            EditorRecord selected = b;
+            view.DetailRequested += r => detailFor = r;
+            view.SelectionChanged += r => selected = r;
+            view.SetRecords(new[] { Record(1), b });
+            list.SetSelection(1);
+
+            list.SendEvent(KeyDownEvent.GetPooled('\n', KeyCode.Return, EventModifiers.None));
+            Assert.AreSame(b, detailFor);
+
+            list.SendEvent(KeyDownEvent.GetPooled('\0', KeyCode.Delete, EventModifiers.None));
+            Assert.IsNull(view.SelectedRecord);
+            Assert.IsNull(selected);
+        }
+
+        [Test]
+        public void Keyboard_CtrlC_CopiesUrl_CtrlShiftC_CopiesCurl()
+        {
+            var view = new RecordListView();
+            var list = view.Q<MultiColumnListView>();
+            var record = Record(1, "https://h/copy-me");
+            view.SetRecords(new[] { record });
+            list.SetSelection(0);
+
+            list.SendEvent(KeyDownEvent.GetPooled('c', KeyCode.C, EventModifiers.Control));
+            Assert.AreEqual("https://h/copy-me", EditorGUIUtility.systemCopyBuffer);
+
+            list.SendEvent(KeyDownEvent.GetPooled('C', KeyCode.C, EventModifiers.Control | EventModifiers.Shift));
+            Assert.That(EditorGUIUtility.systemCopyBuffer, Does.StartWith("curl 'https://h/copy-me'"));
         }
 
         [Test]

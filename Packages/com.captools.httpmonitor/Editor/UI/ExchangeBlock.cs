@@ -32,11 +32,11 @@ namespace HttpMonitor.Editor
             _title.AddToClassList("hm-block-title");
             head.Add(_title);
 
-            _bodyTab = new Button(() => ShowTab(true)) { text = "Body" };
+            _bodyTab = new Button(() => ShowTab(true)) { text = "Body", tooltip = "The " + title.ToLowerInvariant() + " body, formatted when it is JSON or markup" };
             _bodyTab.AddToClassList("hm-tab");
             head.Add(_bodyTab);
 
-            _headersTab = new Button(() => ShowTab(false)) { text = "Headers" };
+            _headersTab = new Button(() => ShowTab(false)) { text = "Headers", tooltip = "The " + title.ToLowerInvariant() + " headers; redacted values show as a badge" };
             _headersTab.AddToClassList("hm-tab");
             head.Add(_headersTab);
 
