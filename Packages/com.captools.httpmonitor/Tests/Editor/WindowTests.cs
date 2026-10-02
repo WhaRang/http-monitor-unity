@@ -140,12 +140,16 @@ namespace HttpMonitor.Tests.Editor
             view.SetRecords(new[] { Record(1), b });
             list.SetSelection(1);
 
-            list.SendEvent(KeyDownEvent.GetPooled('\n', KeyCode.Return, EventModifiers.None));
+            // Events only dispatch inside a panel, so the keyboard logic is driven directly.
+            Assert.IsTrue(view.HandleKey(KeyCode.Return, action: false, shift: false));
             Assert.AreSame(b, detailFor);
 
-            list.SendEvent(KeyDownEvent.GetPooled('\0', KeyCode.Delete, EventModifiers.None));
+            Assert.IsTrue(view.HandleKey(KeyCode.Delete, action: false, shift: false));
             Assert.IsNull(view.SelectedRecord);
             Assert.IsNull(selected);
+
+            Assert.IsFalse(view.HandleKey(KeyCode.UpArrow, action: false, shift: false), "movement keys stay with the list");
+            Assert.IsFalse(view.HandleKey(KeyCode.Return, action: false, shift: false) && detailFor != b, "Enter with nothing selected is harmless");
         }
 
         [Test]
@@ -157,11 +161,13 @@ namespace HttpMonitor.Tests.Editor
             view.SetRecords(new[] { record });
             list.SetSelection(0);
 
-            list.SendEvent(KeyDownEvent.GetPooled('c', KeyCode.C, EventModifiers.Control));
+            Assert.IsTrue(view.HandleKey(KeyCode.C, action: true, shift: false));
             Assert.AreEqual("https://h/copy-me", EditorGUIUtility.systemCopyBuffer);
 
-            list.SendEvent(KeyDownEvent.GetPooled('C', KeyCode.C, EventModifiers.Control | EventModifiers.Shift));
+            Assert.IsTrue(view.HandleKey(KeyCode.C, action: true, shift: true));
             Assert.That(EditorGUIUtility.systemCopyBuffer, Does.StartWith("curl 'https://h/copy-me'"));
+
+            Assert.IsFalse(view.HandleKey(KeyCode.C, action: false, shift: false), "a plain C is not a copy");
         }
 
         [Test]

@@ -47,5 +47,19 @@ namespace HttpMonitor
         {
             return headerName != null && RedactedHeaders.Contains(headerName);
         }
+
+        /// <summary>Back to the shipped values; what applies when the project has no settings asset.</summary>
+        public void ResetToDefaults()
+        {
+            CaptureBodies = true;
+            MaxBodyBytes = DefaultMaxBodyBytes;
+            MaxTotalBodyBytes = DefaultMaxTotalBodyBytes;
+            BufferUnknownLengthResponses = true;
+            RedactedValue = DefaultRedactedValue;
+            RedactedHeaders.Clear();
+
+            foreach (var name in HttpMonitorSettings.DefaultRedactedHeaders)
+                RedactedHeaders.Add(name);
+        }
     }
 }

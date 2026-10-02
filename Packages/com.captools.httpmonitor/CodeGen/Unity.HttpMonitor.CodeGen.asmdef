@@ -1,6 +1,6 @@
 {
     "name": "Unity.HttpMonitor.CodeGen",
-    "rootNamespace": "HttpMonitor.CodeGen",
+    "rootNamespace": "HttpMonitor",
     "references": [],
     "includePlatforms": [
         "Editor"

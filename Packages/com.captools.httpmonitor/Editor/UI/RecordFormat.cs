@@ -206,9 +206,9 @@ namespace HttpMonitor.Editor
             if (!string.Equals(record.Method, "GET", StringComparison.OrdinalIgnoreCase))
                 sb.Append(" -X ").Append(record.Method);
 
-            sb.Append(" '").Append(record.Url.Replace("'", "'\\''")).Append('\'');
+            sb.Append(" '").Append((record.Url ?? string.Empty).Replace("'", "'\\''")).Append('\'');
 
-            foreach (var header in record.RequestHeaders)
+            foreach (var header in record.RequestHeaders ?? Array.Empty<EditorHeader>())
             {
                 var value = header.Value == redactedValue
                     ? "$" + header.Name.ToUpperInvariant().Replace('-', '_')
@@ -228,6 +228,13 @@ namespace HttpMonitor.Editor
             return sb.ToString();
         }
 
+        private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
+
+        /// <summary>
+        /// Text means: no control bytes other than tab, newline and carriage return, and valid UTF-8,
+        /// judged on the first 512 bytes. The UTF-8 check is what separates a PNG (0x89 'P' 'N' 'G')
+        /// from prose; a multibyte sequence cut by the 512-byte window is not held against the body.
+        /// </summary>
         public static bool LooksLikeText(byte[] bytes)
         {
             if (bytes == null)
@@ -243,7 +250,17 @@ namespace HttpMonitor.Editor
                     return false;
             }
 
-            return true;
+            try
+            {
+                StrictUtf8.GetString(bytes, 0, limit);
+
+                return true;
+            }
+            catch (DecoderFallbackException e)
+            {
+                // Only a sequence that runs past the sampled window is forgivable.
+                return limit < bytes.Length && e.Index >= limit - 3;
+            }
         }
 
         public static string ReasonPhrase(long status)

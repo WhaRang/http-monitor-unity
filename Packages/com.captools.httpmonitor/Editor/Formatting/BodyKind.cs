@@ -15,6 +15,12 @@ namespace HttpMonitor.Editor
 
     internal static class BodyKindDetector
     {
+        /// <summary>
+        /// A declared Content-Type wins: JSON and markup types format, any other specific type is
+        /// shown as text even when the bytes look like JSON (the server said text, so text; the
+        /// viewer still offers Pretty when <see cref="Sniff"/> disagrees). Only a missing or generic
+        /// type (octet-stream, */*) falls back to sniffing the bytes.
+        /// </summary>
         public static BodyKind Detect(byte[] body, string contentType)
         {
             if (body == null || body.Length == 0)
@@ -34,7 +40,18 @@ namespace HttpMonitor.Editor
             if (type.Contains("html") || type.Contains("xml"))
                 return BodyKind.Markup;
 
-            // No usable content type: sniff the first bytes.
+            if (IsSpecific(type))
+                return BodyKind.Text;
+
+            return Sniff(body);
+        }
+
+        /// <summary>What the first bytes look like, ignoring any declared type. Text bytes only.</summary>
+        public static BodyKind Sniff(byte[] body)
+        {
+            if (body == null || body.Length == 0)
+                return BodyKind.Empty;
+
             var head = System.Text.Encoding.UTF8.GetString(body, 0, Math.Min(body.Length, 64));
 
             if (JsonFormatter.LooksLikeJson(head))
@@ -44,6 +61,11 @@ namespace HttpMonitor.Editor
                 return BodyKind.Markup;
 
             return BodyKind.Text;
+        }
+
+        private static bool IsSpecific(string type)
+        {
+            return type.Length > 0 && type != "*/*" && !type.Contains("octet-stream");
         }
 
         private static bool IsImageSignature(byte[] b)

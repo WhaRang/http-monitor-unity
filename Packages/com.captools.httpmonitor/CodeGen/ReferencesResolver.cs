@@ -11,17 +11,16 @@ namespace HttpMonitor.CodeGen
     /// </summary>
     internal sealed class ReferencesResolver : IAssemblyResolver
     {
-        private readonly Dictionary<string, string> _pathsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, AssemblyDefinition> _cache = new Dictionary<string, AssemblyDefinition>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _pathsByName = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, AssemblyDefinition> _cache = new(StringComparer.OrdinalIgnoreCase);
 
         public ReferencesResolver(IEnumerable<string> referencePaths)
         {
             foreach (var path in referencePaths)
             {
                 var name = Path.GetFileNameWithoutExtension(path);
-                
-                if (!_pathsByName.ContainsKey(name)) 
-                    _pathsByName.Add(name, path);
+
+                _pathsByName.TryAdd(name, path);
             }
         }
 
@@ -34,19 +33,18 @@ namespace HttpMonitor.CodeGen
         {
             lock (_cache)
             {
-                if (_cache.TryGetValue(name.Name, out var cached)) 
+                if (_cache.TryGetValue(name.Name, out var cached))
                     return cached;
-                
-                if (!_pathsByName.TryGetValue(name.Name, out var path)) 
+
+                if (!_pathsByName.TryGetValue(name.Name, out var path))
                     throw new AssemblyResolutionException(name);
 
-                if (parameters.AssemblyResolver == null) 
-                    parameters.AssemblyResolver = this;
-                
+                parameters.AssemblyResolver ??= this;
+
                 var stream = new MemoryStream(File.ReadAllBytes(path));
                 var assembly = AssemblyDefinition.ReadAssembly(stream, parameters);
                 _cache.Add(name.Name, assembly);
-                
+
                 return assembly;
             }
         }
@@ -55,9 +53,9 @@ namespace HttpMonitor.CodeGen
         {
             lock (_cache)
             {
-                foreach (var assembly in _cache.Values) 
+                foreach (var assembly in _cache.Values)
                     assembly.Dispose();
-                
+
                 _cache.Clear();
             }
         }

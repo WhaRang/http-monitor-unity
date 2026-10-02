@@ -44,6 +44,7 @@ namespace HttpMonitor.Editor
 
         private byte[] _body;
         private BodyKind _kind = BodyKind.Empty;
+        private BodyKind _prettyKind = BodyKind.Empty; // what Pretty would format as: the declared kind, else the sniffed one
         private Mode _mode = Mode.Raw;
         private bool _modeChosenByUser;
         private string _pretty;
@@ -132,6 +133,9 @@ namespace HttpMonitor.Editor
 
             var previousKind = _kind;
             _kind = BodyKindDetector.Detect(body, contentType);
+            _prettyKind = _kind == BodyKind.Json || _kind == BodyKind.Markup ? _kind
+                : _kind == BodyKind.Text ? BodyKindDetector.Sniff(body)
+                : BodyKind.Empty;
 
             if (_kind != previousKind || !_modeChosenByUser)
             {
@@ -171,7 +175,9 @@ namespace HttpMonitor.Editor
             else
                 SetBanner(kindText + ", " + sizeText, false);
 
-            _prettyButton.style.display = _kind == BodyKind.Json || _kind == BodyKind.Markup ? DisplayStyle.Flex : DisplayStyle.None;
+            // Pretty is offered whenever something could be formatted, including JSON a server mislabelled as text/plain.
+            _prettyButton.style.display = _prettyKind == BodyKind.Json || _prettyKind == BodyKind.Markup ? DisplayStyle.Flex : DisplayStyle.None;
+            _prettyButton.tooltip = _prettyKind == _kind ? "Formatted with indentation and line numbers" : $"Looks like {KindText(_prettyKind)} despite the declared Content-Type; format it anyway";
             _imageButton.style.display = _kind == BodyKind.Image ? DisplayStyle.Flex : DisplayStyle.None;
             _rawButton.style.display = _kind == BodyKind.Image || _kind == BodyKind.Binary ? DisplayStyle.None : DisplayStyle.Flex;
 
@@ -265,12 +271,12 @@ namespace HttpMonitor.Editor
                 }
 
                 var text = Encoding.UTF8.GetString(_body);
-                var ok = _kind == BodyKind.Json ? JsonFormatter.TryFormat(text, out _pretty) : MarkupFormatter.TryFormat(text, out _pretty);
+                var ok = _prettyKind == BodyKind.Json ? JsonFormatter.TryFormat(text, out _pretty) : MarkupFormatter.TryFormat(text, out _pretty);
 
                 if (!ok)
                 {
                     _pretty = null;
-                    Note(_kind == BodyKind.Json ? "Not valid JSON; showing raw." : "Markup could not be parsed; showing raw.");
+                    Note(_prettyKind == BodyKind.Json ? "Not valid JSON; showing raw." : "Markup could not be parsed; showing raw.");
                     ShowText(text, true);
 
                     return;

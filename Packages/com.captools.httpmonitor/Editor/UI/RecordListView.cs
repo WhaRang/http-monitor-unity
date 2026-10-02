@@ -386,42 +386,47 @@ namespace HttpMonitor.Editor
         /// </summary>
         private void OnKeyDown(KeyDownEvent e)
         {
+            if (HandleKey(e.keyCode, e.actionKey, e.shiftKey))
+                e.StopPropagation();
+        }
+
+        /// <summary>The keyboard logic without the event plumbing, so it is testable without a panel.</summary>
+        /// <returns>true when the key was consumed and must not bubble further.</returns>
+        internal bool HandleKey(KeyCode key, bool action, bool shift)
+        {
             var record = SelectedRecord;
 
-            switch (e.keyCode)
+            switch (key)
             {
                 case KeyCode.End:
                     Follow(true);
                     ScrollToLatest();
-                    e.StopPropagation();
 
-                    return;
+                    return true;
                 case KeyCode.Home:
                 case KeyCode.PageUp:
                 case KeyCode.UpArrow:
                     _userScrolled = true;
 
-                    return;
+                    return false; // the list still handles the movement
                 case KeyCode.Return:
                 case KeyCode.KeypadEnter:
                     if (record != null)
                         DetailRequested?.Invoke(record);
 
-                    e.StopPropagation();
-
-                    return;
+                    return true;
                 case KeyCode.Delete:
                 case KeyCode.Backspace:
                     ClearSelection();
                     SelectionChanged?.Invoke(null);
-                    e.StopPropagation();
 
-                    return;
-                case KeyCode.C when e.actionKey && record != null:
-                    Copy(e.shiftKey ? RecordFormat.ToCurl(record, HttpMonitorSession.Current.Options.RedactedValue) : record.Url);
-                    e.StopPropagation();
+                    return true;
+                case KeyCode.C when action && record != null:
+                    Copy(shift ? RecordFormat.ToCurl(record, HttpMonitorSession.Current.Options.RedactedValue) : record.Url);
 
-                    return;
+                    return true;
+                default:
+                    return false;
             }
         }
 

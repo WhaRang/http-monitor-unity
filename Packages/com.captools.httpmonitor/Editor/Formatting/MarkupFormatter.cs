@@ -5,8 +5,10 @@ using System.Text;
 namespace HttpMonitor.Editor
 {
     /// <summary>
-    /// Indents HTML and XML: one tag per line, children indented, short text kept on its own line,
-    /// the contents of <c>script</c>, <c>style</c> and <c>pre</c> emitted untouched. It is a
+    /// Indents HTML and XML: one tag per line, children indented, text on its own line, tags copied
+    /// verbatim (attribute quoting and self-closing slashes are never rewritten). The contents of
+    /// <c>script</c> and <c>style</c> keep their own line structure under a uniform indent; the
+    /// contents of <c>pre</c> and <c>textarea</c> are emitted exactly as found. It is a
     /// tokenizer with a tag stack, not a DOM: HTML void elements and self-closing tags do not push,
     /// and a closing tag that matches nothing (or unbalanced nesting) makes the whole format fail so
     /// the viewer falls back to raw rather than mis-indent.
@@ -23,6 +25,12 @@ namespace HttpMonitor.Editor
         private static readonly HashSet<string> RawTextElements = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "script", "style", "pre", "textarea",
+        };
+
+        /// <summary>Whitespace is content here, so not even a uniform indent is added.</summary>
+        private static readonly HashSet<string> WhitespaceSignificantElements = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "pre", "textarea",
         };
 
         public static bool LooksLikeMarkup(string text)
@@ -125,6 +133,10 @@ namespace HttpMonitor.Editor
                 if (isSelfClosing || VoidElements.Contains(name))
                     continue;
 
+                // Pushed before the raw-text handling: the closing tag of a <script> or <style> is
+                // matched by the next iteration like any other, so it must find the name on the stack.
+                stack.Add(name);
+
                 if (RawTextElements.Contains(name))
                 {
                     var closingTag = "</" + name;
@@ -136,14 +148,10 @@ namespace HttpMonitor.Editor
                     var raw = markup.Substring(i, end - i).Trim('\r', '\n');
 
                     if (raw.Trim().Length > 0)
-                        AppendRaw(sb, stack.Count + 1, raw);
+                        AppendRaw(sb, WhitespaceSignificantElements.Contains(name) ? 0 : stack.Count, raw);
 
                     i = end;
-
-                    continue; // the closing tag is handled by the next iteration, with the name still on the stack
                 }
-
-                stack.Add(name);
             }
 
             if (!sawTag || stack.Count != 0)

@@ -227,7 +227,7 @@ namespace HttpMonitor.Editor
             UpdateLayoutButton();
             toolbar.Add(_layoutButton);
 
-            toolbar.Add(new ToolbarButton(OptionsWindow.Open) { text = "⚙", tooltip = "Capture options: body caps, redacted headers, records kept" });
+            toolbar.Add(new ToolbarButton(HttpMonitorSettingsProvider.Open) { text = "⚙", tooltip = "Project Settings ▸ HTTP Monitor: weaving, body caps, redacted headers, records kept" });
             toolbar.Add(new ToolbarButton(ShowShortcuts) { text = "?", tooltip = "Keyboard shortcuts" });
 
             return toolbar;

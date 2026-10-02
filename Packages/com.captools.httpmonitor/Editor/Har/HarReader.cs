@@ -91,10 +91,15 @@ namespace HttpMonitor.Editor
             return record;
         }
 
+        /// <summary>
+        /// ISO 8601 with "Z", an offset, or nothing (assumed UTC). Parsed as a DateTimeOffset so the
+        /// result is independent of the machine's time zone; <c>RoundtripKind</c> and
+        /// <c>AdjustToUniversal</c> cannot be combined on Mono, which is what the first version did.
+        /// </summary>
         private static long ParseStarted(string iso)
         {
-            if (!string.IsNullOrEmpty(iso) && DateTime.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal, out var started))
-                return started.Ticks;
+            if (!string.IsNullOrEmpty(iso) && DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var started))
+                return started.UtcDateTime.Ticks;
 
             return DateTime.UtcNow.Ticks;
         }

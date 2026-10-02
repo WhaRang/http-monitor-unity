@@ -1,8 +1,9 @@
 {
     "name": "HttpMonitor.Editor",
-    "rootNamespace": "HttpMonitor.Editor",
+    "rootNamespace": "HttpMonitor",
     "references": [
-        "HttpMonitor.Runtime"
+        "HttpMonitor.Runtime",
+        "Unity.HttpMonitor.CodeGen"
     ],
     "includePlatforms": [
         "Editor"

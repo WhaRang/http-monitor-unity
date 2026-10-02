@@ -42,7 +42,7 @@ namespace HttpMonitor.Editor
         public string Method;
         public string Url;
         public long StartedAtUtcTicks;
-        public EditorHeader[] RequestHeaders;
+        public EditorHeader[] RequestHeaders = NoHeaders;
         public byte[] RequestBody;
         public bool RequestBodyTruncated;
 
@@ -50,7 +50,7 @@ namespace HttpMonitor.Editor
         public double DurationMs;
         public long StatusCode;
         public string Error;
-        public EditorHeader[] ResponseHeaders;
+        public EditorHeader[] ResponseHeaders = NoHeaders;
         public byte[] ResponseBody;
         public bool ResponseBodyTruncated;
         public long UploadedBytes;

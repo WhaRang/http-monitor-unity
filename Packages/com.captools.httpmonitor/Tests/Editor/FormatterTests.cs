@@ -86,11 +86,19 @@ namespace HttpMonitor.Tests.Editor
         }
 
         [Test]
-        public void ScriptStyleAndPre_KeepTheirContent()
+        public void ScriptAndStyle_KeepTheirLines_UnderAUniformIndent()
         {
             Assert.AreEqual(
-                "<html>\n  <script>\n    if (a < b) { x(); }\n      indented();\n  </script>\n  <pre>\n      keep   this\n  </pre>\n</html>",
-                Format("<html><script>\nif (a < b) { x(); }\n  indented();\n</script><pre>    keep   this</pre></html>"));
+                "<html>\n  <script>\n    if (a < b) { x(); }\n      indented();\n  </script>\n</html>",
+                Format("<html><script>\nif (a < b) { x(); }\n  indented();\n</script></html>"));
+        }
+
+        [Test]
+        public void PreAndTextarea_AreEmittedExactly_WhitespaceIsContent()
+        {
+            Assert.AreEqual(
+                "<html>\n  <pre>\n    keep   this\n  and this\n  </pre>\n  <textarea>\n x \n  </textarea>\n</html>",
+                Format("<html><pre>    keep   this\n  and this</pre><textarea> x </textarea></html>"));
         }
 
         [Test]
@@ -100,8 +108,9 @@ namespace HttpMonitor.Tests.Editor
                 "<!DOCTYPE html>\n<!-- a > b -->\n<html>\n  <p>\n    x\n  </p>\n</html>",
                 Format("<!DOCTYPE html><!-- a > b --><html><p>x</p></html>"));
 
+            // Tags are copied verbatim: the self-closing "/>" is not normalised to " />".
             Assert.AreEqual(
-                "<?xml version=\"1.0\"?>\n<root>\n  <item id=\"1\" />\n  <item>\n    <![CDATA[ raw < stuff ]]>\n  </item>\n</root>",
+                "<?xml version=\"1.0\"?>\n<root>\n  <item id=\"1\"/>\n  <item>\n    <![CDATA[ raw < stuff ]]>\n  </item>\n</root>",
                 Format("<?xml version=\"1.0\"?><root><item id=\"1\"/><item><![CDATA[ raw < stuff ]]></item></root>"));
         }
 
@@ -115,6 +124,36 @@ namespace HttpMonitor.Tests.Editor
         public void ExistingWhitespace_IsNormalised()
         {
             Assert.AreEqual("<ul>\n  <li>\n    one\n  </li>\n  <li>\n    two\n  </li>\n</ul>", Format("<ul>\n  <li>one</li>\n\n  <li>two</li>\n</ul>\n"));
+        }
+
+        [Test]
+        public void RealPage_WithStyleAndScript_AndUnquotedAttributes_Formats()
+        {
+            // example.com as served in 2026: unquoted attribute values, a style block, an empty script element.
+            const string page = "<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Example Domain</title><style>html{color-scheme:light dark;background:light-dark(#eee,#222)}body{font:16px/1.6 system-ui,sans-serif;max-width:26em;margin:auto;padding:25vh 2em 2em;text-align:center}</style></head><body><p>This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.</p><script src=/s.js></script></body></html>";
+
+            Assert.AreEqual(
+                "<!doctype html>\n" +
+                "<html lang=en>\n" +
+                "  <head>\n" +
+                "    <meta charset=utf-8>\n" +
+                "    <meta name=viewport content=\"width=device-width,initial-scale=1\">\n" +
+                "    <title>\n" +
+                "      Example Domain\n" +
+                "    </title>\n" +
+                "    <style>\n" +
+                "      html{color-scheme:light dark;background:light-dark(#eee,#222)}body{font:16px/1.6 system-ui,sans-serif;max-width:26em;margin:auto;padding:25vh 2em 2em;text-align:center}\n" +
+                "    </style>\n" +
+                "  </head>\n" +
+                "  <body>\n" +
+                "    <p>\n" +
+                "      This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.\n" +
+                "    </p>\n" +
+                "    <script src=/s.js>\n" +
+                "    </script>\n" +
+                "  </body>\n" +
+                "</html>",
+                Format(page));
         }
 
         [Test]
@@ -140,12 +179,23 @@ namespace HttpMonitor.Tests.Editor
         }
 
         [Test]
-        public void WithoutContentType_TheBytesAreSniffed()
+        public void WithoutContentType_OrAGenericOne_TheBytesAreSniffed()
         {
             Assert.AreEqual(BodyKind.Json, Detect("  {\"a\":1}"));
             Assert.AreEqual(BodyKind.Json, Detect("[1,2]"));
+            Assert.AreEqual(BodyKind.Json, Detect("[1,2]", "application/octet-stream"));
+            Assert.AreEqual(BodyKind.Json, Detect("[1,2]", "*/*"));
             Assert.AreEqual(BodyKind.Markup, Detect("<!DOCTYPE html><html></html>"));
             Assert.AreEqual(BodyKind.Text, Detect("hello"));
+        }
+
+        [Test]
+        public void Sniff_IgnoresTheDeclaredType_SoTheViewerCanStillOfferPretty()
+        {
+            Assert.AreEqual(BodyKind.Json, BodyKindDetector.Sniff(Encoding.UTF8.GetBytes("{\"mislabelled\":true}")));
+            Assert.AreEqual(BodyKind.Markup, BodyKindDetector.Sniff(Encoding.UTF8.GetBytes("<a/>")));
+            Assert.AreEqual(BodyKind.Text, BodyKindDetector.Sniff(Encoding.UTF8.GetBytes("plain")));
+            Assert.AreEqual(BodyKind.Empty, BodyKindDetector.Sniff(new byte[0]));
         }
 
         [Test]

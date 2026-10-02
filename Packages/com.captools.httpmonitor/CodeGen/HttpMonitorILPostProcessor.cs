@@ -16,40 +16,18 @@ namespace HttpMonitor.CodeGen
     /// </summary>
     public sealed class HttpMonitorILPostProcessor : ILPostProcessor
     {
-        /// <summary>Add this scripting define to turn the weaver off for a build target.</summary>
-        private const string DisableDefine = "HTTP_MONITOR_DISABLE";
-
-        private static readonly string[] SkipPrefixes =
-        {
-            "Unity.", "UnityEngine.", "UnityEditor.",
-            "Mono.", "System.", "mscorlib", "netstandard", "nunit.",
-        };
-
-        /// <summary>Our own code calls the real SendWebRequest/Dispose and must never be rewritten.</summary>
-        private static readonly string[] SkipExact =
-        {
-            "HttpMonitor.Runtime",
-            "HttpMonitor.Editor",
-        };
-
         public override ILPostProcessor GetInstance() => this;
 
         /// <summary>
         /// Every user assembly is scanned: UnityWebRequest lives in an engine module and HttpClient
         /// in netstandard, both referenced by practically everything, so a reference filter would
         /// not save work. The scan itself is cheap and leaves untouched assemblies untouched.
+        /// The project's settings (mirrored to a file by the Editor) can turn weaving off, exclude
+        /// assemblies, or keep release builds unwoven; see <see cref="WeaveDecision"/>.
         /// </summary>
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
-            var name = compiledAssembly.Name;
-
-            if (SkipExact.Contains(name))
-                return false;
-
-            if (SkipPrefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)))
-                return false;
-
-            return compiledAssembly.Defines == null || !compiledAssembly.Defines.Contains(DisableDefine);
+            return WeaveDecision.ShouldWeave(compiledAssembly.Name, compiledAssembly.Defines, WeaverConfig.Load());
         }
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)
@@ -59,47 +37,43 @@ namespace HttpMonitor.CodeGen
                 var input = compiledAssembly.InMemoryAssembly;
                 var hasSymbols = input.PdbData != null && input.PdbData.Length > 0;
 
-                using (var resolver = new ReferencesResolver(compiledAssembly.References))
-                using (var peStream = new MemoryStream(input.PeData))
+                using var resolver = new ReferencesResolver(compiledAssembly.References);
+                using var peStream = new MemoryStream(input.PeData);
+                
+                var readerParameters = new ReaderParameters
                 {
-                    var readerParameters = new ReaderParameters
-                    {
-                        AssemblyResolver = resolver,
-                        ReadingMode = ReadingMode.Immediate,
-                        ReadSymbols = hasSymbols,
-                        SymbolReaderProvider = hasSymbols ? new PortablePdbReaderProvider() : null,
-                        SymbolStream = hasSymbols ? new MemoryStream(input.PdbData) : null,
-                    };
+                    AssemblyResolver = resolver,
+                    ReadingMode = ReadingMode.Immediate,
+                    ReadSymbols = hasSymbols,
+                    SymbolReaderProvider = hasSymbols ? new PortablePdbReaderProvider() : null,
+                    SymbolStream = hasSymbols ? new MemoryStream(input.PdbData) : null,
+                };
 
-                    using (var assembly = AssemblyDefinition.ReadAssembly(peStream, readerParameters))
-                    {
-                        var weaver = new Weaver();
+                using var assembly = AssemblyDefinition.ReadAssembly(peStream, readerParameters);
+                var weaver = new Weaver();
 
-                        if (!weaver.Weave(assembly.MainModule))
-                            return null; // Unity keeps the original bytes.
+                if (!weaver.Weave(assembly.MainModule))
+                    return null;
 
-                        var peOut = new MemoryStream();
-                        var pdbOut = new MemoryStream();
+                var peOut = new MemoryStream();
+                var pdbOut = new MemoryStream();
 
-                        var writerParameters = new WriterParameters
-                        {
-                            WriteSymbols = hasSymbols,
-                            SymbolWriterProvider = hasSymbols ? new PortablePdbWriterProvider() : null,
-                            SymbolStream = hasSymbols ? pdbOut : null,
-                        };
+                var writerParameters = new WriterParameters
+                {
+                    WriteSymbols = hasSymbols,
+                    SymbolWriterProvider = hasSymbols ? new PortablePdbWriterProvider() : null,
+                    SymbolStream = hasSymbols ? pdbOut : null,
+                };
 
-                        assembly.Write(peOut, writerParameters);
+                assembly.Write(peOut, writerParameters);
 
-                        return new ILPostProcessResult(new InMemoryAssembly(peOut.ToArray(), pdbOut.ToArray()));
-                    }
-                }
+                return new ILPostProcessResult(new InMemoryAssembly(peOut.ToArray(), pdbOut.ToArray()));
             }
             catch (Exception e)
             {
-                // A broken debugger must never break the build: warn and hand back the untouched assembly.
                 var diagnostics = new List<DiagnosticMessage>
                 {
-                    new DiagnosticMessage
+                    new()
                     {
                         DiagnosticType = DiagnosticType.Warning,
                         MessageData = $"[HttpMonitor] weaver failed on {compiledAssembly.Name}, assembly left unmodified: {e}",

@@ -243,12 +243,17 @@ namespace HttpMonitor.Editor
             if (i < s.Length && s[i] == '.')
             {
                 i++;
+                var fractionDigits = 0;
 
                 while (i < s.Length && char.IsDigit(s[i]))
                 {
                     i++;
-                    digits++;
+                    fractionDigits++;
                 }
+
+                // "1." is not JSON: a decimal point must be followed by at least one digit.
+                if (fractionDigits == 0)
+                    return false;
             }
 
             if (i < s.Length && (s[i] == 'e' || s[i] == 'E'))
