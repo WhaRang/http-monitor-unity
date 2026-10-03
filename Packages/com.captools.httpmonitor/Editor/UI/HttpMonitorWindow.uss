@@ -309,6 +309,10 @@
     white-space: pre;
 }
 
+.hm-composer-body .unity-text-element {
+    white-space: pre;
+}
+
 .hm-composer-result {
     flex-direction: row;
     align-items: center;
@@ -918,10 +922,11 @@
 .hm-body-wrap {
     margin: 0 6px 0 0;
     font-size: 10px;
+    flex-shrink: 0;
 }
 
-.hm-body-wrap > .unity-toggle__input {
-    flex-direction: row-reverse;
+.hm-body-wrap .unity-toggle__text {
+    margin-left: 3px;
 }
 
 .hm-body-scroll {

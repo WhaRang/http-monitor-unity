@@ -246,7 +246,11 @@ namespace HttpMonitor.Editor
                 "Ctrl+C\t\tcopy the URL\n" +
                 "Ctrl+Shift+C\tcopy as cURL\n" +
                 "Click a header\tsort; again for descending; again for arrival order\n" +
-                "Right-click a row\tcopy, filter by host, pin, open in browser",
+                "Right-click a row\treplay, edit and resend, copy, filter by host, pin, open in browser\n" +
+                "\n" +
+                "Replay button\tresend the selected request from the Editor (asks first for non-GET)\n" +
+                "Edit & resend\topen the composer with the request filled in\n" +
+                "Ctrl+Enter\t\tsend, inside the composer",
                 "Close");
         }
 

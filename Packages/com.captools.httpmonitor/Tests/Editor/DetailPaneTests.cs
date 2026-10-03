@@ -68,7 +68,7 @@ namespace HttpMonitor.Tests.Editor
             Assert.Contains("Content-Type", labels);
             Assert.Contains("application/json", labels);
             Assert.Contains("Location", labels);
-            Assert.Contains("{\n  \"score\": 42\n}", labels, "the JSON request body is pretty-printed by default");
+            Assert.Contains("{\n    \"score\": 42\n}", labels, "the JSON request body is pretty-printed by default, shown four spaces per level");
             Assert.Contains("ok", labels, "response body text");
             Assert.That(labels, Has.Some.EqualTo("redacted"), "redacted values become a badge");
             Assert.That(labels, Has.None.EqualTo("<redacted>"), "the placeholder text itself is never shown");

@@ -180,7 +180,7 @@ namespace HttpMonitor.Editor
             var line = new VisualElement();
             line.AddToClassList("hm-composer-options");
 
-            _followRedirects = new Toggle("Follow redirects") { value = _request.FollowRedirects, tooltip = "Off: a 3xx is recorded as the response instead of being followed" };
+            _followRedirects = new Toggle { text = "Follow redirects", value = _request.FollowRedirects, tooltip = "Off: a 3xx is recorded as the response instead of being followed" };
             _followRedirects.RegisterValueChangedCallback(e => _request.FollowRedirects = e.newValue);
             line.Add(_followRedirects);
 
@@ -217,7 +217,7 @@ namespace HttpMonitor.Editor
             {
                 _request.Headers.Add(new EditorHeader(string.Empty, string.Empty));
                 RebuildHeaderRows();
-            }) { text = "+ Add header" };
+            }) { text = "+ Add header", tooltip = "Add an empty header row. Host and Content-Length are set by the client and ignored here." };
             add.AddToClassList("hm-small-button");
             head.Add(add);
             section.Add(head);
@@ -336,6 +336,7 @@ namespace HttpMonitor.Editor
 
             _body = new TextField { multiline = true, value = _bodyText };
             _body.AddToClassList("hm-composer-body");
+            EditorFonts.ApplyMonospace(_body);
             _body.RegisterValueChangedCallback(e =>
             {
                 _bodyText = e.newValue;
@@ -383,7 +384,7 @@ namespace HttpMonitor.Editor
             _result.AddToClassList("hm-composer-result-text");
             bar.Add(_result);
 
-            _showInList = new Button(() => { if (_lastRecord != null) HttpMonitorWindow.Instance?.SelectRuntime(_lastRecord); }) { text = "Show in list" };
+            _showInList = new Button(() => { if (_lastRecord != null) HttpMonitorWindow.Instance?.SelectRuntime(_lastRecord); }) { text = "Show in list", tooltip = "Select the replayed request in the HTTP Monitor window" };
             _showInList.AddToClassList("hm-small-button");
             _showInList.style.display = DisplayStyle.None;
             bar.Add(_showInList);
@@ -421,23 +422,41 @@ namespace HttpMonitor.Editor
             }
         }
 
+        /// <summary>Why a request cannot be sent yet, or null when it can. Pure, so it is tested without the window.</summary>
+        internal static string Validate(ReplayRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Url) || !Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
+                return "Enter an absolute URL first, like https://api.example.com/path.";
+
+            if (!string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase) && !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+                return $"Only http and https can be replayed from the Editor; this URL is {uri.Scheme}.";
+
+            if (string.IsNullOrWhiteSpace(request.Method))
+                return "Choose a method.";
+
+            foreach (var header in request.Headers)
+            {
+                if (string.IsNullOrWhiteSpace(header.Name))
+                    return "A header row has no name. Fill it in or remove the row.";
+            }
+
+            if (request.HasRedactedHeaders)
+                return "Paste the real value for: " + string.Join(", ", request.RedactedHeaderNames) + ".";
+
+            return null;
+        }
+
         private async void Send()
         {
             if (_inFlight != null)
                 return;
 
             var request = BuildRequest();
+            var problem = Validate(request);
 
-            if (string.IsNullOrEmpty(request.Url) || !Uri.TryCreate(request.Url, UriKind.Absolute, out _))
+            if (problem != null)
             {
-                ShowResult("Enter an absolute URL first.", error: true);
-
-                return;
-            }
-
-            if (request.HasRedactedHeaders)
-            {
-                ShowResult("Paste the real value for: " + string.Join(", ", request.RedactedHeaderNames), error: true);
+                ShowResult(problem, error: true);
 
                 return;
             }

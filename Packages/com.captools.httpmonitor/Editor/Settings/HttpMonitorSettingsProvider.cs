@@ -101,7 +101,7 @@ namespace HttpMonitor.Editor
             {
                 banner.style.display = DisplayStyle.None;
                 HttpMonitorSettingsEditor.RequestRecompile();
-            }) { text = "Recompile now" };
+            }) { text = "Recompile now", tooltip = "Recompile every script assembly so the weaver sees the new settings. Same as a script change, a few seconds." };
             banner.Add(recompile);
             weaving.Add(banner);
 

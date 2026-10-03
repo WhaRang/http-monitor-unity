@@ -74,7 +74,9 @@ namespace HttpMonitor.Editor
             _imageButton = ModeButton("Image", Mode.Image, "Decoded image preview");
             bar.Add(_modes);
 
-            _wrap = new Toggle("Wrap") { tooltip = "Wrap long lines" };
+            // Text on the toggle itself, not a base-field label: the label slot has a fixed minimum
+            // width meant for Inspector alignment and would push the checkbox away from the word.
+            _wrap = new Toggle { text = "Wrap", tooltip = "Wrap long lines" };
             _wrap.AddToClassList("hm-body-wrap");
             _wrap.SetValueWithoutNotify(EditorPrefs.GetBool("HttpMonitor.Body.Wrap", false));
             _wrap.RegisterValueChangedCallback(e =>
@@ -105,6 +107,7 @@ namespace HttpMonitor.Editor
             _text.AddToClassList("hm-body-text");
             _text.selection.isSelectable = true;
             _textRow.Add(_text);
+            EditorFonts.ApplyMonospace(_textRow); // both the gutter and the text, so the rows line up
             _scroll.Add(_textRow);
 
             _image = new Image { scaleMode = ScaleMode.ScaleToFit };
@@ -283,7 +286,7 @@ namespace HttpMonitor.Editor
                 }
             }
 
-            ShowText(_pretty, true);
+            ShowText(WidenIndent(_pretty), true);
         }
 
         private void RenderImage()
@@ -348,10 +351,54 @@ namespace HttpMonitor.Editor
         private void ApplyWrap()
         {
             var wrap = _wrap.value;
-            _text.style.whiteSpace = wrap ? WhiteSpace.Normal : WhiteSpace.NoWrap;
+            // Pre / PreWrap keep leading spaces and blank lines; Normal / NoWrap would collapse the
+            // indentation the formatters produce into one column.
+            _text.style.whiteSpace = wrap ? WhiteSpace.PreWrap : WhiteSpace.Pre;
             _scroll.mode = wrap ? ScrollViewMode.Vertical : ScrollViewMode.VerticalAndHorizontal;
             // Line numbers only line up without wrapping.
             _lineNumbers.style.display = wrap || string.IsNullOrEmpty(_lineNumbers.text) ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        /// <summary>
+        /// The formatters indent by two spaces per level, the convention for JSON on disk and what
+        /// Copy gives you. On screen that is too subtle, so each level is shown four spaces wide.
+        /// Display only; the stored and copied text is untouched.
+        /// </summary>
+        internal static string WidenIndent(string text, int from = 2, int to = 4)
+        {
+            if (string.IsNullOrEmpty(text) || from <= 0 || from == to)
+                return text;
+
+            var sb = new StringBuilder(text.Length + text.Length / 4);
+            var lineStart = true;
+            var leading = 0;
+
+            foreach (var c in text)
+            {
+                if (lineStart && c == ' ')
+                {
+                    leading++;
+
+                    continue;
+                }
+
+                if (lineStart)
+                {
+                    sb.Append(' ', leading / from * to + leading % from);
+                    leading = 0;
+                    lineStart = false;
+                }
+
+                sb.Append(c);
+
+                if (c == '\n')
+                    lineStart = true;
+            }
+
+            if (leading > 0)
+                sb.Append(' ', leading / from * to + leading % from);
+
+            return sb.ToString();
         }
 
         private void ReleaseTexture()

@@ -214,6 +214,28 @@ namespace HttpMonitor.Tests.Editor
     public class BodyViewHelperTests
     {
         [Test]
+        public void WidenIndent_DoublesEachTwoSpaceLevel_ForDisplayOnly()
+        {
+            Assert.AreEqual("{\n    \"a\": [\n        1\n    ]\n}", BodyView.WidenIndent("{\n  \"a\": [\n    1\n  ]\n}"));
+            Assert.AreEqual(" x", BodyView.WidenIndent(" x"), "a single space is not a level, so it stays one space");
+            Assert.AreEqual("     x", BodyView.WidenIndent("   x"), "three spaces: one level widened to four, plus the odd one");
+            Assert.AreEqual("no indent", BodyView.WidenIndent("no indent"));
+            Assert.AreEqual("a\n\n    b", BodyView.WidenIndent("a\n\n  b"), "blank lines survive");
+            Assert.AreEqual("", BodyView.WidenIndent(""));
+            Assert.IsNull(BodyView.WidenIndent(null));
+            Assert.AreEqual("  same", BodyView.WidenIndent("  same", 2, 2), "no-op when widths match");
+        }
+
+        [Test]
+        public void MonospaceFont_ResolvesOrIsNull_NeverThrows()
+        {
+            var font = EditorFonts.Monospace;
+
+            if (font != null)
+                Assert.That(font.name, Does.Contain("Mono").Or.Contain("Consolas").Or.Contain("Menlo").Or.Contain("Courier").Or.Contain("Liberation").Or.Contain("DejaVu"));
+        }
+
+        [Test]
         public void LineNumbers_AreRightAligned()
         {
             Assert.AreEqual("1", BodyView.LineNumbers(1));
