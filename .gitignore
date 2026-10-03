@@ -107,3 +107,6 @@ InitTestScene*.unity*
 
 # mdBook output (documentation site build)
 /book/
+
+# Private planning note, kept locally only
+/HTTP-MONITOR-IDEA.md
