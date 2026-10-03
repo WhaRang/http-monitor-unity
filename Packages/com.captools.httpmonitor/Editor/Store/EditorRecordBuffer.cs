@@ -21,6 +21,7 @@ namespace HttpMonitor.Editor
         [SerializeField] private long _maxTotalBodyBytes = DefaultMaxTotalBodyBytes;
 
         [NonSerialized] private Dictionary<HttpRecord, EditorRecord> _byRuntime;
+        [NonSerialized] private Dictionary<HttpRecord, long> _pendingReplayOf;
         [NonSerialized] private long _storedBodyBytes;
         [NonSerialized] private bool _storedBodyBytesKnown;
 
@@ -72,6 +73,13 @@ namespace HttpMonitor.Editor
             EnsureBodyBytes();
 
             var record = EditorRecord.From(runtime, _nextId++);
+
+            if (_pendingReplayOf != null && _pendingReplayOf.TryGetValue(runtime, out var originalId))
+            {
+                _pendingReplayOf.Remove(runtime);
+                record.MarkReplayOf(originalId);
+            }
+
             _records.Add(record);
             ByRuntime[runtime] = record;
             _storedBodyBytes += record.StoredBodyBytes;
@@ -83,16 +91,51 @@ namespace HttpMonitor.Editor
             return record;
         }
 
+        /// <summary>
+        /// Links a runtime record to the record it replays. The copy may not have arrived from the
+        /// bridge yet (events are drained on the Editor update loop), so the link is kept and applied
+        /// on arrival in that case.
+        /// </summary>
+        public void MarkReplayOf(HttpRecord runtime, long originalId)
+        {
+            if (runtime == null || originalId <= 0)
+                return;
+
+            if (ByRuntime.TryGetValue(runtime, out var record))
+            {
+                record.MarkReplayOf(originalId);
+                RecordUpdated?.Invoke(record);
+                Changed?.Invoke();
+
+                return;
+            }
+
+            (_pendingReplayOf ?? (_pendingReplayOf = new Dictionary<HttpRecord, long>()))[runtime] = originalId;
+        }
+
         /// <summary>Adds records that did not come from the runtime (a HAR import). They get fresh ids and fire one Changed at the end.</summary>
         public void AddImported(IReadOnlyList<EditorRecord> records)
         {
             EnsureBodyBytes();
 
+            // Ids are reassigned on import; replay links inside the same file follow the renumbering.
+            var newIdByOldId = new Dictionary<long, long>();
+
             foreach (var record in records)
             {
+                if (record.RuntimeId > 0 && !newIdByOldId.ContainsKey(record.RuntimeId))
+                    newIdByOldId[record.RuntimeId] = _nextId;
+
                 record.Id = _nextId++;
                 record.Imported = true;
                 record.Runtime = null;
+            }
+
+            foreach (var record in records)
+            {
+                if (record.ReplayOfId > 0 && newIdByOldId.TryGetValue(record.ReplayOfId, out var newId))
+                    record.ReplayOfId = newId;
+
                 _records.Add(record);
                 _storedBodyBytes += record.StoredBodyBytes;
                 EvictToLimits(record);

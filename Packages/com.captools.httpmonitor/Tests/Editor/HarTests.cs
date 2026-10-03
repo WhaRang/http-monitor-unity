@@ -151,6 +151,7 @@ namespace HttpMonitor.Tests.Editor
             Assert.AreEqual("HttpClient", MiniJson.GetString(extension, "client"));
             Assert.AreEqual("Woven, Manual", MiniJson.GetString(extension, "source"));
             Assert.IsTrue(MiniJson.GetBool(extension, "responseBodyTruncated"));
+            Assert.AreEqual(0, MiniJson.GetNumber(extension, "replayOf"), "not a replay");
         }
 
         [Test]

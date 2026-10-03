@@ -61,6 +61,11 @@ namespace HttpMonitor.Editor
         /// <summary>True for records loaded from a HAR file rather than captured in this Editor.</summary>
         public bool Imported;
 
+        /// <summary>Editor id of the record this one was replayed from; 0 when it is not a replay.</summary>
+        public long ReplayOfId;
+
+        public bool IsReplay => ReplayOfId > 0;
+
         /// <summary>The runtime record this was copied from; null after a domain reload or for imports.</summary>
         [NonSerialized] public HttpRecord Runtime;
 
@@ -114,6 +119,12 @@ namespace HttpMonitor.Editor
         {
             State = HttpRecordState.Incomplete;
             Error = reason;
+            Revision++;
+        }
+
+        internal void MarkReplayOf(long originalId)
+        {
+            ReplayOfId = originalId;
             Revision++;
         }
 

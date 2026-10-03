@@ -6,7 +6,8 @@
         "UnityEditor.TestRunner",
         "Unity.HttpMonitor.CodeGen",
         "HttpMonitor.Runtime",
-        "HttpMonitor.Editor"
+        "HttpMonitor.Editor",
+        "HttpMonitor.Tests"
     ],
     "includePlatforms": [
         "Editor"

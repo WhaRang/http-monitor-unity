@@ -65,6 +65,8 @@ namespace HttpMonitor.Editor
             MiniJson.WriteString(sb, record.Error);
             sb.Append(",\"requestBodyTruncated\":").Append(record.RequestBodyTruncated ? "true" : "false");
             sb.Append(",\"responseBodyTruncated\":").Append(record.ResponseBodyTruncated ? "true" : "false");
+            sb.Append(",\"replayOf\":");
+            MiniJson.WriteNumber(sb, record.ReplayOfId);
             sb.Append("}}");
         }
 

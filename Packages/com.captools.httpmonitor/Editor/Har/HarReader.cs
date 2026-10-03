@@ -70,6 +70,7 @@ namespace HttpMonitor.Editor
                 record.Error = MiniJson.GetString(extension, "error");
                 record.RequestBodyTruncated = MiniJson.GetBool(extension, "requestBodyTruncated");
                 record.ResponseBodyTruncated = MiniJson.GetBool(extension, "responseBodyTruncated");
+                record.ReplayOfId = (long)MiniJson.GetNumber(extension, "replayOf");
             }
             else
             {

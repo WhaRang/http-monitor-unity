@@ -104,8 +104,10 @@ namespace HttpMonitor
         /// Records a request made by a client the SDK cannot observe. Finish the returned handle with
         /// Complete, Fail or Abort. Headers and bodies are redacted and capped like everything else.
         /// </summary>
+        /// <param name="client">How the record is labelled; <see cref="HttpClientKind.Custom"/> unless the request really went through one of the known clients.</param>
         /// <returns>The handle, or null when recording is paused or the call failed.</returns>
-        public static HttpCaptureHandle Begin(string method, string url, IReadOnlyList<HttpHeader> requestHeaders = null, byte[] requestBody = null)
+        public static HttpCaptureHandle Begin(string method, string url, IReadOnlyList<HttpHeader> requestHeaders = null, byte[] requestBody = null,
+            HttpClientKind client = HttpClientKind.Custom)
         {
             try
             {
@@ -114,7 +116,7 @@ namespace HttpMonitor
                 if (!session.IsRecording)
                     return null;
 
-                var record = session.Begin(HttpClientKind.Custom, HttpCaptureSource.Manual, method, url, requestHeaders, requestBody);
+                var record = session.Begin(client, HttpCaptureSource.Manual, method, url, requestHeaders, requestBody);
 
                 return new HttpCaptureHandle(session, record, requestBody?.Length ?? 0);
             }
