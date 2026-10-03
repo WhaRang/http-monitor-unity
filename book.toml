@@ -1,0 +1,26 @@
+# mdBook configuration for the documentation site.
+# The pages live inside the package (Unity's Documentation~ convention) so they ship with it and
+# are versioned with the code; this file only tells mdBook where to find them.
+#
+#   mdbook serve      preview at http://localhost:3000
+#   mdbook build      output in ./book (git-ignored)
+
+[book]
+title = "HTTP Monitor for Unity"
+authors = ["Aliaksei Tokarau"]
+language = "en"
+src = "Packages/com.captools.httpmonitor/Documentation~"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/WhaRang/http-monitor-unity"
+edit-url-template = "https://github.com/WhaRang/http-monitor-unity/edit/main/Packages/com.captools.httpmonitor/Documentation~/{path}"
+site-url = "/http-monitor-unity/"
+
+[output.html.search]
+limit-results = 20

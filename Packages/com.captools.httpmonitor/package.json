@@ -5,6 +5,8 @@
   "unity": "2022.3",
   "description": "Chrome DevTools' Network tab inside the Unity Editor. Captures UnityWebRequest and HttpClient traffic with zero code changes via build-time IL weaving.",
   "keywords": ["http", "network", "debug", "monitor", "unitywebrequest", "httpclient"],
+  "documentationUrl": "https://wharang.github.io/http-monitor-unity/",
+  "changelogUrl": "https://wharang.github.io/http-monitor-unity/changelog.html",
   "author": {
     "name": "Aliaksei Tokarau"
   },

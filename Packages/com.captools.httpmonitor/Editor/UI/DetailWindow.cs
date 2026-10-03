@@ -24,7 +24,8 @@ namespace HttpMonitor.Editor
         private ToolbarButton _dockBack;
         private VisualElement _missing;
         private Label _missingText;
-        private bool _subscribed;
+        // Not serialized: after a domain reload the subscriptions are gone, so this must come back false.
+        [NonSerialized] private bool _subscribed;
 
         /// <summary>Raised when a follower window closes for any reason, so the main window can dock the detail back.</summary>
         internal static event Action FollowerClosed;

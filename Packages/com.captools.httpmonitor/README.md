@@ -4,10 +4,17 @@ Chrome DevTools' Network tab inside the Unity Editor. Every HTTP request and res
 makes, live, filterable, exportable, replayable. No code changes: call sites are rewritten at
 compile time, so `UnityWebRequest` and `HttpClient` traffic shows up on its own.
 
+**Documentation: <https://wharang.github.io/http-monitor-unity/>**
+
 ## Install
 
-Add the package through the Package Manager (git URL, or a local path while developing). It
-depends on `com.unity.nuget.mono-cecil`, which the Package Manager resolves.
+Package Manager ▸ **+** ▸ **Install package from git URL**:
+
+```
+https://github.com/WhaRang/http-monitor-unity.git?path=Packages/com.captools.httpmonitor
+```
+
+It depends on `com.unity.nuget.mono-cecil`, which the Package Manager resolves.
 
 Open **Window ▸ Analysis ▸ HTTP Monitor** (Ctrl+Shift+H), press Play. Requests appear.
 

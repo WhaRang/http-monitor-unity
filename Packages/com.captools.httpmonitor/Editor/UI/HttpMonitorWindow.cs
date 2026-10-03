@@ -53,9 +53,12 @@ namespace HttpMonitor.Editor
         private ToolbarToggle _preserveToggle;
         private ToolbarToggle _timelineToggle;
         private ToolbarButton _layoutButton;
-        private bool _refreshScheduled;
-        private bool _isMaximized;
-        private List<EditorRecord> _visible = new List<EditorRecord>();
+        // Transient state. [NonSerialized] matters: a domain reload serializes the private fields of
+        // an EditorWindow too, so without it a flag set just before a reload comes back set while
+        // whatever it guarded (a scheduled callback, a built layout) is gone.
+        [NonSerialized] private bool _refreshScheduled;
+        [NonSerialized] private bool _isMaximized;
+        [NonSerialized] private List<EditorRecord> _visible = new List<EditorRecord>();
 
         /// <summary>The open main window, for popped-out detail windows that forward keyboard navigation.</summary>
         internal static HttpMonitorWindow Instance { get; private set; }
@@ -125,7 +128,13 @@ namespace HttpMonitor.Editor
 
         public void CreateGUI()
         {
+            // A fresh tree means fresh transient state, whatever the fields held before.
+            _refreshScheduled = false;
+            _isMaximized = false;
+            _visible = new List<EditorRecord>();
+
             var root = rootVisualElement;
+            root.Clear();
             root.AddToClassList("hm-root");
             root.AddToClassList(EditorGUIUtility.isProSkin ? "hm-dark" : "hm-light");
 
@@ -570,6 +579,11 @@ namespace HttpMonitor.Editor
 
         // ---------------------------------------------------------------- state
 
+        /// <summary>
+        /// Coalesces a burst of change events into one refresh on the next UI tick. The flag is
+        /// cleared before refreshing, and the refresh is guarded, so a failure inside it can never
+        /// leave the window deaf to later changes.
+        /// </summary>
         private void ScheduleRefresh()
         {
             if (_refreshScheduled)
@@ -579,7 +593,15 @@ namespace HttpMonitor.Editor
             rootVisualElement.schedule.Execute(() =>
             {
                 _refreshScheduled = false;
-                Refresh();
+
+                try
+                {
+                    Refresh();
+                }
+                catch (Exception e)
+                {
+                    HttpMonitorLog.Warning($"window refresh failed: {e.GetType().Name}: {e.Message}");
+                }
             });
         }
 
