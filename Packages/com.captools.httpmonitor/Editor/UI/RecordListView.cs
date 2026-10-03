@@ -47,6 +47,12 @@ namespace HttpMonitor.Editor
         /// <summary>Fired on Enter: the user wants to work with the selected record's detail.</summary>
         public event Action<EditorRecord> DetailRequested;
 
+        /// <summary>Context menu: resend this record as it was.</summary>
+        public event Action<EditorRecord> ReplayRequested;
+
+        /// <summary>Context menu: open the composer pre-filled from this record.</summary>
+        public event Action<EditorRecord> EditAndResendRequested;
+
         public RecordListView()
         {
             AddToClassList("hm-record-list");
@@ -451,6 +457,8 @@ namespace HttpMonitor.Editor
             if (record == null)
                 return;
 
+            e.menu.AppendAction("Replay", _ => ReplayRequested?.Invoke(record));
+            e.menu.AppendAction("Edit and resend…", _ => EditAndResendRequested?.Invoke(record));
             e.menu.AppendAction("Pin in a new window", _ => PinRequested?.Invoke(record));
             e.menu.AppendSeparator();
             e.menu.AppendAction("Copy URL", _ => Copy(record.Url));

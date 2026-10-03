@@ -34,12 +34,34 @@ namespace HttpMonitor.Editor
             _buffer = buffer;
         }
 
+        /// <summary>A replay in flight: the record exists from the start, the task completes with the exchange.</summary>
+        public sealed class Handle
+        {
+            public HttpRecord Record { get; }
+            public Task<HttpRecord> Completion { get; }
+
+            internal Handle(HttpRecord record, Task<HttpRecord> completion)
+            {
+                Record = record;
+                Completion = completion;
+            }
+        }
+
         /// <summary>
         /// Sends the request and returns the runtime record once the exchange has finished (in any
         /// state). The Editor copy is linked to <see cref="ReplayRequest.OriginalId"/> when set.
         /// Never throws for network failures; those end up in the record.
         /// </summary>
-        public async Task<HttpRecord> SendAsync(ReplayRequest request, CancellationToken cancellation = default)
+        public Task<HttpRecord> SendAsync(ReplayRequest request, CancellationToken cancellation = default)
+        {
+            return Send(request, cancellation).Completion;
+        }
+
+        /// <summary>
+        /// Like <see cref="SendAsync"/>, but the record is handed back immediately (it is created
+        /// synchronously, in the Pending state) so a window can select it while the exchange runs.
+        /// </summary>
+        public Handle Send(ReplayRequest request, CancellationToken cancellation = default)
         {
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
@@ -55,34 +77,45 @@ namespace HttpMonitor.Editor
             if (request.OriginalId > 0)
                 _buffer?.MarkReplayOf(record, request.OriginalId);
 
-            try
-            {
-                using (var handler = new HttpClientHandler { AllowAutoRedirect = request.FollowRedirects, UseCookies = false, AutomaticDecompression = DecompressionMethods.None })
-                using (var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(Math.Max(1, request.TimeoutSeconds)) })
-                using (var message = Build(request))
-                using (var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false))
-                {
-                    var (prefix, total) = await ReadBoundedAsync(response.Content, _session.Options.MaxBodyBytes, cancellation).ConfigureAwait(false);
+            return new Handle(record, ExchangeAsync(request, record, handle, cancellation));
+        }
 
-                    handle.Complete((long)response.StatusCode, CollectHeaders(response.Headers, response.Content?.Headers), prefix,
-                        downloadedBytes: total, uploadedBytes: request.Body?.Length ?? 0);
+        private async Task<HttpRecord> ExchangeAsync(ReplayRequest request, HttpRecord record, HttpCaptureHandle handle, CancellationToken cancellation)
+        {
+            // One token covers the whole exchange, headers and body alike; HttpClient.Timeout only
+            // covers the send, and Mono does not surface it as a cancellation anyway. The outcome is
+            // classified by which token fired, not by the exception type, which differs by runtime.
+            var timeoutSeconds = Math.Max(1, request.TimeoutSeconds);
+
+            using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation, timeout.Token))
+            {
+                try
+                {
+                    using (var handler = new HttpClientHandler { AllowAutoRedirect = request.FollowRedirects, UseCookies = false, AutomaticDecompression = DecompressionMethods.None })
+                    using (var client = new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan })
+                    using (var message = Build(request))
+                    using (var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false))
+                    {
+                        // Keep one byte past the cap so the session, not this code, decides that the body was truncated.
+                        var keep = Math.Max(0, _session.Options.MaxBodyBytes) + 1L;
+                        var (prefix, total) = await ReadBoundedAsync(response.Content, keep, linked.Token).ConfigureAwait(false);
+
+                        handle.Complete((long)response.StatusCode, CollectHeaders(response.Headers, response.Content?.Headers), prefix,
+                            downloadedBytes: total, uploadedBytes: request.Body?.Length ?? 0);
+                    }
                 }
-            }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-            {
-                handle.Abort("cancelled");
-            }
-            catch (OperationCanceledException)
-            {
-                handle.Abort($"timed out after {request.TimeoutSeconds} s");
-            }
-            catch (HttpRequestException e)
-            {
-                handle.Fail(Describe(e));
-            }
-            catch (Exception e)
-            {
-                handle.Fail(e.GetType().Name + ": " + e.Message);
+                catch (Exception e)
+                {
+                    if (cancellation.IsCancellationRequested)
+                        handle.Abort("cancelled");
+                    else if (timeout.IsCancellationRequested)
+                        handle.Abort($"timed out after {timeoutSeconds} s");
+                    else if (e is HttpRequestException)
+                        handle.Fail(Describe(e));
+                    else
+                        handle.Fail(e.GetType().Name + ": " + e.Message);
+                }
             }
 
             return record;
@@ -119,7 +152,7 @@ namespace HttpMonitor.Editor
         }
 
         /// <summary>Reads the whole response (so the size is right) but keeps only the first <paramref name="keep"/> bytes.</summary>
-        private static async Task<(byte[] prefix, long total)> ReadBoundedAsync(HttpContent content, int keep, CancellationToken cancellation)
+        private static async Task<(byte[] prefix, long total)> ReadBoundedAsync(HttpContent content, long keep, CancellationToken cancellation)
         {
             if (content == null)
                 return (null, 0);

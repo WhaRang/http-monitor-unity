@@ -172,6 +172,9 @@ namespace HttpMonitor.Editor
 
             _pane = new DetailPane();
             _pane.SetLayoutButtonsVisible(false);
+            _pane.ReplayRequested += ReplayController.Replay;
+            _pane.EditAndResendRequested += ReplayController.EditAndResend;
+            _pane.OriginalRequested += id => HttpMonitorWindow.Instance?.SelectById(id);
             root.Add(_pane);
 
             _missing = new VisualElement();

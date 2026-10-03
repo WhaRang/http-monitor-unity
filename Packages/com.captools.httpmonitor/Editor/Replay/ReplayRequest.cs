@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace HttpMonitor.Editor
 {
@@ -7,8 +8,10 @@ namespace HttpMonitor.Editor
     /// What a replay sends: a plain, editable description of a request. Built from a captured
     /// record (<see cref="From"/>) or by hand in the composer. Redacted header values are never in
     /// a record, so they arrive empty and are listed in <see cref="RedactedHeaderNames"/> for the
-    /// UI to ask for.
+    /// UI to ask for. Serializable so the composer survives a domain reload; the values the user
+    /// types for redacted headers are deliberately kept elsewhere (<see cref="ReplaySecrets"/>).
     /// </summary>
+    [Serializable]
     public sealed class ReplayRequest
     {
         public const int DefaultTimeoutSeconds = 30;
@@ -34,6 +37,9 @@ namespace HttpMonitor.Editor
         public bool IsSafeMethod => string.Equals(Method, "GET", StringComparison.OrdinalIgnoreCase)
             || string.Equals(Method, "HEAD", StringComparison.OrdinalIgnoreCase)
             || string.Equals(Method, "OPTIONS", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Host part of the URL, used to scope remembered secrets; empty when the URL does not parse.</summary>
+        public string Host => RecordFormat.Host(Url);
 
         public static ReplayRequest From(EditorRecord record, string redactedValue)
         {
@@ -62,6 +68,21 @@ namespace HttpMonitor.Editor
             }
 
             return request;
+        }
+
+        public ReplayRequest Clone()
+        {
+            return new ReplayRequest
+            {
+                Method = Method,
+                Url = Url,
+                Headers = new List<EditorHeader>(Headers),
+                Body = Body == null ? null : (byte[])Body.Clone(),
+                FollowRedirects = FollowRedirects,
+                TimeoutSeconds = TimeoutSeconds,
+                OriginalId = OriginalId,
+                RedactedHeaderNames = new List<string>(RedactedHeaderNames),
+            };
         }
 
         /// <summary>Fills in a value the user supplied for a redacted header; returns false when no such header is pending.</summary>

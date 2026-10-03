@@ -145,6 +145,191 @@
     font-size: 8px;
 }
 
+.hm-source-badge--replay {
+    background-color: rgba(32, 178, 170, 0.18);
+    border-color: rgb(32, 178, 170);
+    color: rgb(32, 178, 170);
+}
+
+.hm-light .hm-source-badge--replay { color: rgb(0, 128, 120); border-color: rgb(0, 128, 120); }
+
+/* ---------------------------------------------------------------- replay in the detail */
+
+.hm-replay-button {
+    margin-left: 10px;
+}
+
+.hm-summary-replay-of {
+    color: rgb(32, 178, 170);
+    margin-right: 10px;
+    flex-shrink: 0;
+    cursor: link;
+}
+
+.hm-summary-replay-of:hover {
+    -unity-font-style: bold;
+}
+
+/* ---------------------------------------------------------------- composer window */
+
+.hm-composer {
+    flex-grow: 1;
+    padding: 8px;
+}
+
+.hm-composer-line {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.hm-composer-method {
+    width: 96px;
+    margin: 0 4px 0 0;
+}
+
+.hm-composer-method > .unity-base-field__label {
+    display: none;
+}
+
+.hm-composer-custom-method {
+    width: 90px;
+    margin: 0 4px 0 0;
+}
+
+.hm-composer-url {
+    flex-grow: 1;
+    margin: 0 6px 0 0;
+}
+
+.hm-composer-send {
+    min-width: 64px;
+    height: 22px;
+    margin: 0 0 0 2px;
+}
+
+.hm-composer-options {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.hm-composer-options > .unity-toggle {
+    margin-right: 14px;
+}
+
+.hm-composer-timeout {
+    width: 150px;
+}
+
+.hm-composer-timeout > .unity-base-field__label {
+    min-width: 70px;
+}
+
+.hm-composer-origin {
+    margin-left: auto;
+    opacity: 0.7;
+    cursor: link;
+}
+
+.hm-composer-origin:hover {
+    opacity: 1;
+}
+
+.hm-composer-scroll {
+    flex-grow: 1;
+}
+
+.hm-composer-section {
+    margin-bottom: 10px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+.hm-composer-section-head {
+    flex-direction: row;
+    align-items: center;
+    padding: 3px 6px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(0, 0, 0, 0.25);
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.hm-composer-section-title {
+    -unity-font-style: bold;
+    margin-right: 10px;
+}
+
+.hm-composer-empty {
+    padding: 6px;
+    -unity-text-align: middle-left;
+}
+
+.hm-composer-header-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 2px 6px;
+}
+
+.hm-composer-header-name {
+    width: 32%;
+    min-width: 110px;
+    margin: 0 4px 0 0;
+}
+
+.hm-composer-header-value {
+    flex-grow: 1;
+    margin: 0 4px 0 0;
+}
+
+.hm-composer-remove {
+    width: 22px;
+    height: 20px;
+    padding: 0;
+    margin: 0;
+}
+
+.hm-composer-body-hint {
+    -unity-text-align: middle-left;
+    margin-left: 4px;
+}
+
+.hm-composer-binary {
+    padding: 8px;
+}
+
+.hm-composer-body {
+    min-height: 140px;
+    margin: 4px 6px 6px 6px;
+}
+
+.hm-composer-body > .unity-text-field__input {
+    white-space: pre;
+}
+
+.hm-composer-result {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 4px 2px 0 2px;
+    border-top-width: 1px;
+    border-top-color: rgba(0, 0, 0, 0.25);
+}
+
+.hm-composer-result-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    white-space: normal;
+    opacity: 0.85;
+}
+
+.hm-composer-result-text--error {
+    color: #f85149;
+    opacity: 1;
+}
+
 .hm-light .hm-source-badge--automatic { color: rgb(26, 127, 55); border-color: rgb(26, 127, 55); }
 .hm-light .hm-source-badge--manual { color: rgb(9, 105, 218); border-color: rgb(9, 105, 218); }
 .hm-light .hm-source-badge--both { color: rgb(130, 80, 223); border-color: rgb(130, 80, 223); }

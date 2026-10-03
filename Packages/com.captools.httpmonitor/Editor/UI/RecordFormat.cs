@@ -85,19 +85,28 @@ namespace HttpMonitor.Editor
             }
         }
 
-        /// <summary>Badge for a record: the capture source, or "HAR" for a record loaded from a file with no source of its own.</summary>
+        /// <summary>Badge for a record: "R" for a replay, "HAR" for an import with no source of its own, else the capture source.</summary>
         public static string SourceBadge(EditorRecord record)
         {
+            if (record.IsReplay)
+                return "R";
+
             return record.Imported && record.Source == HttpCaptureSource.None ? "HAR" : SourceBadge(record.Source);
         }
 
         public static string SourceClass(EditorRecord record)
         {
+            if (record.IsReplay)
+                return "hm-source-badge--replay";
+
             return record.Imported && record.Source == HttpCaptureSource.None ? "hm-source-badge--imported" : SourceClass(record.Source);
         }
 
         public static string SourceText(EditorRecord record)
         {
+            if (record.IsReplay)
+                return $"replay of #{record.ReplayOfId}, sent from the Editor";
+
             var text = record.Source == HttpCaptureSource.None ? "no capture source" : SourceText(record.Source);
 
             return record.Imported ? text + ", imported from HAR" : text;

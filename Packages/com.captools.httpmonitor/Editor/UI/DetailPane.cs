@@ -22,6 +22,9 @@ namespace HttpMonitor.Editor
         private readonly Button _copyCurl;
         private readonly Button _maximize;
         private readonly Button _popOut;
+        private readonly Button _replay;
+        private readonly Button _edit;
+        private readonly Label _replayOf;
         private readonly VisualElement _poppedOutNotice;
         private readonly Label _poppedOutSummary;
         private readonly ExchangeBlock _request;
@@ -37,6 +40,15 @@ namespace HttpMonitor.Editor
 
         /// <summary>The user clicked "Dock back" on the popped-out notice.</summary>
         public event Action DockBackRequested;
+
+        /// <summary>The user clicked Replay: resend this record as it was.</summary>
+        public event Action<EditorRecord> ReplayRequested;
+
+        /// <summary>The user clicked "Edit and resend": open the composer pre-filled from this record.</summary>
+        public event Action<EditorRecord> EditAndResendRequested;
+
+        /// <summary>The user clicked the "replay of #N" link; the argument is N.</summary>
+        public event Action<long> OriginalRequested;
 
         public DetailPane()
         {
@@ -74,6 +86,13 @@ namespace HttpMonitor.Editor
             _copyCurl = new Button(() => Copy(RecordFormat.ToCurl(_record, RedactedValue))) { text = "Copy as cURL", tooltip = "A curl command that reproduces this request. Redacted headers become shell variables." };
             _copyCurl.AddToClassList("hm-small-button");
             line1.Add(_copyCurl);
+            _replay = new Button(() => ReplayRequested?.Invoke(_record)) { text = "↻ Replay", tooltip = "Send this request again from the Editor. The result appears as a new row linked to this one." };
+            _replay.AddToClassList("hm-small-button");
+            _replay.AddToClassList("hm-replay-button");
+            line1.Add(_replay);
+            _edit = new Button(() => EditAndResendRequested?.Invoke(_record)) { text = "Edit & resend…", tooltip = "Open the composer with this request filled in" };
+            _edit.AddToClassList("hm-small-button");
+            line1.Add(_edit);
             _maximize = new Button(() => MaximizeToggled?.Invoke());
             _maximize.AddToClassList("hm-small-button");
             _maximize.AddToClassList("hm-maximize");
@@ -89,6 +108,11 @@ namespace HttpMonitor.Editor
             _status = new Label();
             _status.AddToClassList("hm-summary-status");
             line2.Add(_status);
+            _replayOf = new Label { tooltip = "Sent from the Editor as a replay. Click to select the original." };
+            _replayOf.AddToClassList("hm-summary-replay-of");
+            _replayOf.style.display = DisplayStyle.None;
+            _replayOf.RegisterCallback<ClickEvent>(_ => { if (_record != null && _record.IsReplay) OriginalRequested?.Invoke(_record.ReplayOfId); });
+            line2.Add(_replayOf);
             _meta = new Label();
             _meta.AddToClassList("hm-summary-meta");
             line2.Add(_meta);
@@ -200,6 +224,9 @@ namespace HttpMonitor.Editor
             var hasError = record.IsFinished && !string.IsNullOrEmpty(record.Error);
             _error.style.display = hasError ? DisplayStyle.Flex : DisplayStyle.None;
             _error.text = hasError ? record.Error : string.Empty;
+
+            _replayOf.style.display = record.IsReplay ? DisplayStyle.Flex : DisplayStyle.None;
+            _replayOf.text = record.IsReplay ? $"↻ replay of #{record.ReplayOfId}" : string.Empty;
         }
 
         private void ShowRequest(EditorRecord record)

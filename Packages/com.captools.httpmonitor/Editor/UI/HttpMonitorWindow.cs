@@ -275,6 +275,8 @@ namespace HttpMonitor.Editor
                 OnQueryChanged();
             };
             _list.PinRequested += record => DetailWindow.OpenPinned(record, position);
+            _list.ReplayRequested += ReplayController.Replay;
+            _list.EditAndResendRequested += ReplayController.EditAndResend;
             _list.DetailRequested += _ =>
             {
                 // Enter: give the detail focus where it lives (popped out, maximized, or in the split).
@@ -301,12 +303,80 @@ namespace HttpMonitor.Editor
             _detail.MaximizeToggled += () => SetMaximized(!_isMaximized);
             _detail.PopOutRequested += PopOut;
             _detail.DockBackRequested += DockBack;
+            WireReplay(_detail);
             _detail.SetPoppedOut(DetailWindow.Follower != null); // a follower may have survived the domain reload
 
             _split.Add(_listPane);
             _split.Add(_detail);
 
             return _split;
+        }
+
+        // ---------------------------------------------------------------- replay
+
+        private void WireReplay(DetailPane pane)
+        {
+            pane.ReplayRequested += ReplayController.Replay;
+            pane.EditAndResendRequested += ReplayController.EditAndResend;
+            pane.OriginalRequested += SelectById;
+        }
+
+        /// <summary>Selects a record by Editor id, or says why it cannot.</summary>
+        internal void SelectById(long id)
+        {
+            var record = Store.Buffer.FindById(id);
+
+            if (record == null)
+            {
+                ShowNotification(new GUIContent($"Request #{id} is no longer in the log"));
+
+                return;
+            }
+
+            if (!_visible.Contains(record))
+            {
+                ShowNotification(new GUIContent($"Request #{id} is hidden by the current filters"));
+
+                return;
+            }
+
+            if (_isMaximized)
+                SetMaximized(false);
+
+            _list.Select(record);
+        }
+
+        /// <summary>
+        /// Selects the Editor copy of a runtime record, now if the bridge already delivered it,
+        /// otherwise as soon as it arrives. Used for replays, whose record exists before the
+        /// exchange finishes.
+        /// </summary>
+        internal void SelectRuntime(HttpRecord runtime)
+        {
+            if (runtime == null)
+                return;
+
+            foreach (var record in Store.Buffer.Records)
+            {
+                if (ReferenceEquals(record.Runtime, runtime))
+                {
+                    SelectById(record.Id);
+
+                    return;
+                }
+            }
+
+            void OnAdded(EditorRecord record)
+            {
+                if (!ReferenceEquals(record.Runtime, runtime))
+                    return;
+
+                Store.Buffer.RecordAdded -= OnAdded;
+                // The list rebuilds on the Changed event that follows RecordAdded; select after that.
+                rootVisualElement.schedule.Execute(() => SelectById(record.Id));
+            }
+
+            Store.Buffer.RecordAdded += OnAdded;
         }
 
         // ---------------------------------------------------------------- pop-out
@@ -377,6 +447,7 @@ namespace HttpMonitor.Editor
             _maximizedDetail = new DetailPane();
             _maximizedDetail.SetMaximized(true);
             _maximizedDetail.MaximizeToggled += () => SetMaximized(false);
+            WireReplay(_maximizedDetail);
             _maximized.Add(_maximizedDetail);
 
             return _maximized;
@@ -612,9 +683,13 @@ namespace HttpMonitor.Editor
             var records = Store.Buffer.Records;
             var errors = 0;
             var pending = 0;
+            var replays = 0;
 
             foreach (var record in records)
             {
+                if (record.IsReplay)
+                    replays++;
+
                 if (!record.IsFinished)
                     pending++;
                 else if (record.IsError)
@@ -636,6 +711,9 @@ namespace HttpMonitor.Editor
 
             if (errors > 0)
                 parts.Add($"{errors} failed");
+
+            if (replays > 0)
+                parts.Add($"{replays} replay{(replays == 1 ? "" : "s")}");
 
             parts.Add(RecordFormat.FormatBytes(Store.Buffer.StoredBodyBytes) + " of bodies");
             parts.Add(Store.IsRecording ? "Recording" : "Paused");
