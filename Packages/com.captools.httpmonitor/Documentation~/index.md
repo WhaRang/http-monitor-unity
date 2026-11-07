@@ -34,7 +34,7 @@ makes, live, filterable, exportable and replayable, with no code changes.
 
 ## Requirements
 
-- Developed and tested on Unity 6000.3. Other versions have not been verified yet.
+- Requires Unity 6 (6000.0 or newer). Tested on 6000.0 and 6000.3.
 - The `com.unity.nuget.mono-cecil` package, resolved automatically as a dependency.
 - Any platform for capture. Replay and the `HttpClient` helpers need a platform with
   `HttpClient`, which excludes WebGL.
