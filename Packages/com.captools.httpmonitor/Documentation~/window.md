@@ -5,6 +5,19 @@ shortcut.
 
 ![The window with its parts labelled](images/window-annotated.png)
 
+1. **[Toolbar](#toolbar)**: record, clear, preserve log, auto-scroll, timeline, HAR, layout,
+   settings and shortcuts.
+2. **[Filter bar](#filtering)**: search, the Errors chip, source chips A and M, client chips,
+   the method dropdown.
+3. **[Request list](#the-request-list)**: one row per request, newest at the bottom.
+4. **[Request and Response blocks](detail.md#request-and-response-blocks)**: each with a Body
+   and a Headers tab. Here, a pretty-printed JSON response.
+5. **[Timeline](#timeline)**: one bar per request on a shared time axis.
+6. **[Summary strip](detail.md#summary-strip)**: method, URL, status, and the Copy, Replay,
+   Maximize and Pop out buttons.
+
+The line at the very bottom is the [status bar](#status-bar).
+
 ## Toolbar
 
 | Control | What it does |
