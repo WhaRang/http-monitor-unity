@@ -17,6 +17,9 @@ namespace HttpMonitor.Samples
     /// </summary>
     public sealed class Playground : MonoBehaviour
     {
+        [Tooltip("Send a batch of requests with every kind of outcome when Play starts, so the window has something to show straight away.")]
+        [SerializeField] private bool _sendMixedBatchOnStart = true;
+
         private PlaygroundServer _server;
         private string _baseUrl;
         private string _log = "Press a button. Requests appear in Window ▸ Analysis ▸ HTTP Monitor.";
@@ -26,6 +29,64 @@ namespace HttpMonitor.Samples
         {
             _server = new PlaygroundServer();
             _baseUrl = _server.Start();
+        }
+
+        private void Start()
+        {
+            if (_sendMixedBatchOnStart)
+                StartCoroutine(MixedBatch());
+        }
+
+        /// <summary>
+        /// One of everything: successes of several content types, 2xx/3xx/4xx/5xx statuses, a transport
+        /// failure, an abort, a long pending request, a truncated body, redacted headers, HttpClient
+        /// traffic and both manual capture paths. Staggered slightly so the timeline shows lanes.
+        /// </summary>
+        private IEnumerator MixedBatch()
+        {
+            var step = new WaitForSeconds(0.08f);
+
+            StartCoroutine(Get("echo?from=startup", "application/json"));
+            yield return step;
+            StartCoroutine(PostJson());
+            yield return step;
+            StartCoroutine(Get("html", null));
+            yield return step;
+            StartCoroutine(Get("image", null));
+            yield return step;
+
+            foreach (var status in new[] { 201, 204, 304, 401, 404, 429, 500, 503 })
+            {
+                StartCoroutine(Get($"status/{status}", null));
+                yield return step;
+            }
+
+            StartCoroutine(GetUrl("http://127.0.0.1:1/?from=refused"));
+            yield return step;
+            StartCoroutine(AbortMidFlight());
+            yield return step;
+            StartCoroutine(Get("delay/4000", null));
+            yield return step;
+            StartCoroutine(Get("bytes/3000000", null));
+            yield return step;
+            StartCoroutine(GetWithHeaders());
+            yield return step;
+
+            Fire(HttpClientGet("echo?from=startup-httpclient"));
+            yield return step;
+            Fire(HttpClientPost());
+            yield return step;
+            Fire(HttpClientGet("chunked"));
+            yield return step;
+
+            StartCoroutine(ManualTrack());
+            yield return step;
+            ManualBegin();
+
+            for (var i = 0; i < 6; i++)
+                StartCoroutine(Get($"delay/{150 + i * 120}?n={i}", null));
+
+            Log("startup batch sent: every status, a failure, an abort, a pending request, HttpClient and manual capture");
         }
 
         private void OnDisable()
@@ -40,6 +101,10 @@ namespace HttpMonitor.Samples
             GUILayout.Label("<b>HTTP Monitor playground</b>  ·  local server at " + _baseUrl, new GUIStyle(GUI.skin.label) { richText = true });
             GUILayout.Space(6);
 
+            if (GUILayout.Button("Send mixed batch (every kind of outcome)", GUILayout.Height(28)))
+                StartCoroutine(MixedBatch());
+
+            GUILayout.Space(6);
             GUILayout.Label("UnityWebRequest (captured automatically)");
             Row(
                 ("GET JSON", () => StartCoroutine(Get("echo?from=json", "application/json"))),

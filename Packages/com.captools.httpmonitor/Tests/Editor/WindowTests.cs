@@ -193,6 +193,21 @@ namespace HttpMonitor.Tests.Editor
         }
 
         [Test]
+        public void RowIndexOf_WalksUpToTheCell_AndIsMinusOneOutsideRows()
+        {
+            var cell = new VisualElement { userData = 3 };
+            var label = new Label();
+            var inner = new VisualElement();
+            cell.Add(label);
+            label.Add(inner);
+
+            Assert.AreEqual(3, RecordListView.RowIndexOf(inner));
+            Assert.AreEqual(3, RecordListView.RowIndexOf(cell));
+            Assert.AreEqual(-1, RecordListView.RowIndexOf(new VisualElement()));
+            Assert.AreEqual(-1, RecordListView.RowIndexOf(null));
+        }
+
+        [Test]
         public void Select_PicksTheRecord_AndReportsIt()
         {
             var view = new RecordListView();

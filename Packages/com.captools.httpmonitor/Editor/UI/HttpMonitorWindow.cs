@@ -394,6 +394,10 @@ namespace HttpMonitor.Editor
 
         // ---------------------------------------------------------------- pop-out
 
+        /// <summary>
+        /// Moves the detail into its own window. From the maximized view the window first returns to the
+        /// list-and-detail layout: the detail is leaving, so the list should get the room back.
+        /// </summary>
         private void PopOut()
         {
             if (_isMaximized)
@@ -460,6 +464,7 @@ namespace HttpMonitor.Editor
             _maximizedDetail = new DetailPane();
             _maximizedDetail.SetMaximized(true);
             _maximizedDetail.MaximizeToggled += () => SetMaximized(false);
+            _maximizedDetail.PopOutRequested += PopOut; // restores the layout, then pops out
             WireReplay(_maximizedDetail);
             _maximized.Add(_maximizedDetail);
 

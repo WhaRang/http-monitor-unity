@@ -74,7 +74,10 @@ namespace HttpMonitor.Editor
             _list.columnSortingChanged += OnColumnSortingChanged;
             _list.RegisterCallback<WheelEvent>(_ => OnUserScrolled(), TrickleDown.TrickleDown);
             _list.RegisterCallback<KeyDownEvent>(OnKeyDown);
-            _list.RegisterCallback<ContextualMenuPopulateEvent>(PopulateContextMenu);
+            // A manipulator is what actually opens the menu on right-click; a bare event callback is not enough.
+            _list.AddManipulator(new ContextualMenuManipulator(PopulateContextMenu));
+            // Right-click selects the row under the pointer first, as in every list, so the menu acts on that row.
+            _list.RegisterCallback<PointerDownEvent>(OnPointerDown, TrickleDown.TrickleDown);
 
             AddColumns();
             Add(_list);
@@ -235,6 +238,8 @@ namespace HttpMonitor.Editor
                 makeCell = make,
                 bindCell = (element, index) =>
                 {
+                    element.userData = index; // lets a right-click find its row
+
                     if (index >= 0 && index < _items.Count)
                         bind(element, _items[index]);
                 },
@@ -449,6 +454,29 @@ namespace HttpMonitor.Editor
         }
 
         // ---------------------------------------------------------------- context menu
+
+        private void OnPointerDown(PointerDownEvent e)
+        {
+            if (e.button != 1)
+                return;
+
+            var index = RowIndexOf(e.target as VisualElement);
+
+            if (index >= 0 && index != _list.selectedIndex)
+                _list.SetSelection(index);
+        }
+
+        /// <summary>The item index of the cell an element belongs to, or -1 (header, empty space).</summary>
+        internal static int RowIndexOf(VisualElement element)
+        {
+            for (var current = element; current != null; current = current.parent)
+            {
+                if (current.userData is int index)
+                    return index;
+            }
+
+            return -1;
+        }
 
         private void PopulateContextMenu(ContextualMenuPopulateEvent e)
         {

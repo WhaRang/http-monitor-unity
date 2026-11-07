@@ -75,12 +75,12 @@ namespace HttpMonitor.Editor
                 row.Add(value);
             }
 
-            row.RegisterCallback<ContextualMenuPopulateEvent>(e =>
+            row.AddManipulator(new ContextualMenuManipulator(e =>
             {
                 e.menu.AppendAction("Copy name", _ => Copy(header.Name));
                 e.menu.AppendAction("Copy value", _ => Copy(header.Value), redacted ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
                 e.menu.AppendAction("Copy line", _ => Copy(header.ToString()));
-            });
+            }));
 
             return row;
         }
